@@ -1,0 +1,2 @@
+[console_scripts]
+kv-cache-bench = benchmarks.run_benchmarks:main

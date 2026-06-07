@@ -1,0 +1,10 @@
+data/
+benchmarks/results/
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+.env
+.DS_Store
+*.swp

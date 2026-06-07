@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: kv-cache-tier-persistence
+Version: 0.1.0
+Summary: Tiered KV cache persistence system for LLM inference
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: safetensors>=0.4.0
+Requires-Dist: lz4>=4.3.0
+Requires-Dist: zstandard>=0.21.0
+Requires-Dist: boto3>=1.28.0
+Requires-Dist: aiofiles>=23.0
+Requires-Dist: rich>=13.0
+Requires-Dist: matplotlib>=3.7.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Dynamic: license-file
