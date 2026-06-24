@@ -1,0 +1,69 @@
+{
+  "title": "KV Cache Tier Persistence Observability",
+  "timezone": "browser",
+  "panels": [
+    {
+      "title": "Cache Hit Rate by Tier",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(kv_cache_hits_total[5m]) / (rate(kv_cache_hits_total[5m]) + rate(kv_cache_misses_total[5m])) * 100",
+          "legendFormat": "Overall Hit Rate %"
+        },
+        {
+          "expr": "rate(kv_cache_hits_total{tier=\"hot\"}[5m])",
+          "legendFormat": "Hot Hits/sec"
+        },
+        {
+          "expr": "rate(kv_cache_hits_total{tier=\"warm\"}[5m])",
+          "legendFormat": "Warm Hits/sec"
+        }
+      ]
+    },
+    {
+      "title": "Tier Utilization (Bytes)",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "kv_cache_tier_utilization_bytes",
+          "legendFormat": "{{tier}} Tier"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        }
+      }
+    },
+    {
+      "title": "Migration Latency (P95)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(kv_cache_migration_seconds_bucket[5m]))",
+          "legendFormat": "{{direction}} P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Cold Starts Avoided (Value Generated)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(increase(kv_cache_hits_total[24h]))",
+          "legendFormat": "Cold Starts Prevented (24h)"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}

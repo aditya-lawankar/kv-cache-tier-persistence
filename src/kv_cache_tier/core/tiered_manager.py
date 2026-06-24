@@ -76,12 +76,25 @@ class TieredCacheManager:
             while self.hot_tier.is_full(data_size):
                 evicted = self.evict_from_tier("hot")
                 if not evicted:
-                    logger.warning("Hot tier full but couldn't evict. Demoting directly to warm.")
-                    # Direct to warm if hot is completely stuck
+                    # Hot tier couldn't free space — save directly to warm
+                    self._ensure_space_in_tier("warm", data_size)
                     self._save_to_tier("warm", session_id, user_id, data, kv_data, metadata)
                     return
                     
             self._save_to_tier("hot", session_id, user_id, data, kv_data, metadata)
+
+    def _ensure_space_in_tier(self, tier_name: str, data_size: int) -> None:
+        """Cascade evictions through the tier hierarchy to make space."""
+        tier = self._get_tier(tier_name)
+        max_attempts = 50  # Safety valve
+        attempts = 0
+        while tier.is_full(data_size) and attempts < max_attempts:
+            evicted = self.evict_from_tier(tier_name)
+            if not evicted:
+                # If this tier can't evict, the entry is too large or everything is stuck
+                logger.warning(f"Cannot make space in {tier_name} for {data_size} bytes")
+                break
+            attempts += 1
             
     def _save_to_tier(self, tier_name: str, session_id: str, user_id: str, data: bytes, kv_data: dict, metadata: dict) -> None:
         tier = self._get_tier(tier_name)
@@ -206,16 +219,15 @@ class TieredCacheManager:
                 return False
                 
             # Ensure space in dest
-            while dest_tier.is_full(len(data)):
-                if not self.evict_from_tier(target_tier):
-                    # If target is cold and full, we just delete
-                    if target_tier == "cold":
-                        logger.warning(f"Cold tier full, permanently deleting {session_id}")
-                        source_tier.delete(session_id)
-                        self.index.remove(session_id)
-                        self.eviction_policy.on_remove(session_id)
-                        return True
-                    return False
+            self._ensure_space_in_tier(target_tier, len(data))
+            if dest_tier.is_full(len(data)):
+                if target_tier == "cold":
+                    logger.warning(f"Cold tier full, permanently deleting {session_id}")
+                    source_tier.delete(session_id)
+                    self.index.remove(session_id)
+                    self.eviction_policy.on_remove(session_id)
+                    return True
+                return False
                     
             dest_tier.put(session_id, data, entry)
             source_tier.delete(session_id)
