@@ -158,7 +158,38 @@ This occurs because LRU retains sessions uniformly by recency, treating all hits
 
 This reframes the research question fundamentally: **the correct optimization target for learned cache policies is not hit rate — it is expected cache value.** LRU maximizes hit *count*; a learned policy can maximize hit *worth*. Systems that evaluate cache policies solely by hit rate will systematically undervalue learned approaches that prioritize expensive-to-recompute entries.
 
-## 10. Discussion & Future Work
+## 10. Prototype Validation: TinyLlama Integration
+
+To validate that our tiered cache system functions with real transformer models — not just simulated workloads — we integrated the `TieredCacheManager` with TinyLlama-1.1B-Chat using HuggingFace Transformers. This bridges the gap between our simulation-based evaluation and a live inference pipeline.
+
+### Setup
+
+We ran TinyLlama-1.1B (22 layers, 32 query heads, 4 KV heads via Grouped Query Attention, head_dim=64) on CPU with a 598-token multi-turn conversation prompt. For each trial, we: (1) performed a full cold-start prefill to establish the baseline TTFT, (2) extracted the real KV cache from the model's `past_key_values`, (3) serialized it through our tier system using raw binary format, (4) deserialized and restored the cache, and (5) resumed generation from the restored state.
+
+**GQA Compatibility**: Modern models like TinyLlama use Grouped Query Attention, where the number of KV heads (4) differs from query heads (32). Our serialization layer must use `num_key_value_heads` — not `num_attention_heads` — for KV tensor dimensions, or deserialization produces shape mismatches. This is a critical implementation detail for production deployment.
+
+### Results
+
+| Metric | Trial 1 | Trial 2 | Average |
+| :--- | :--- | :--- | :--- |
+| Cold-start TTFT (full prefill) | 11,804ms | 11,449ms | 11,627ms |
+| Warm-start TTFT (first token from cache) | 239ms | 243ms | 241ms |
+| TTFT speedup | 49.4x | 47.1x | 48.3x |
+| End-to-end generation speedup (30 tokens) | 1.80x | 1.69x | 1.75x |
+| Cache size (FP16, 22 layers) | 13,156 KB | 13,156 KB | 13,156 KB |
+| Save latency | 55ms | 57ms | 56ms |
+| Load latency | 4ms | 5ms | 4.5ms |
+| Semantic coherence | Exact match | Exact match | 100% |
+
+The warm-start TTFT of **241ms** versus the cold-start of **11,627ms** represents a **48x improvement** in time-to-first-token. The end-to-end speedup is lower (1.75x) because the per-token autoregressive decode phase runs at the same speed regardless of cache state — the speedup is concentrated entirely in eliminating the prefill.
+
+Semantic coherence was verified by comparing greedy-decoded output: both cold-start and warm-start generation produced byte-identical text, confirming that FP16 quantization during serialization introduces no measurable degradation.
+
+### Cost Model Calibration
+
+Our simulation cost model (calibrated for A100 GPU at $2.50/hr) predicted 57,747ms for 598-token prefill, while actual CPU wall-clock was 11,627ms — a 389% overestimate. This discrepancy is expected: the cost model's parameters (prefill throughput, quadratic attention factor) must be calibrated to the target hardware. For production deployment, we recommend profiling the specific model-hardware combination to set these parameters. The relative policy comparisons in Section 9 remain valid since all policies use the same cost model.
+
+## 11. Discussion & Future Work
 
 ### The Metric Mismatch Problem
 
@@ -177,9 +208,9 @@ Our experiments suggest a simple decision framework for operators:
 Several limitations constrain the generalizability of our findings:
 
 1. **Synthetic workloads**: Our workload traces are generated from parameterized distributions, not real production logs. Real user behavior may exhibit correlations (e.g., session length predicting return probability) not captured by our independent feature model.
-2. **No real GPU integration**: GPU savings are computed from a cost model using estimated prefill times, not measured wall-clock TTFT on real hardware. A live integration with TinyLlama or a similar model is needed to validate the cost model.
+2. **CPU-only validation**: Our TinyLlama integration validates functional correctness and TTFT improvement on CPU but does not measure GPU-specific effects (e.g., CUDA memory fragmentation, PCIe transfer overhead for GPU↔CPU cache migration). A full GPU validation with A100 or H100 hardware is needed.
 3. **Simulated latencies**: Tier transition latencies in our simulation reflect in-process serialization, not actual NVMe or S3 I/O. Production deployments would face additional network and storage latencies.
-4. **Single-model evaluation**: All experiments use a 2-layer, 2-head toy model configuration. Scaling to production models (e.g., 32 layers, 32 heads) would increase per-session sizes by ~256x, potentially shifting the capacity dynamics.
+4. **Single-model evaluation**: Our simulation uses a 2-layer, 2-head toy configuration, and our live integration uses a 1.1B-parameter model. Scaling to production models (e.g., Llama-2 70B with 80 layers) would increase per-session cache sizes by orders of magnitude, potentially shifting capacity dynamics.
 
 ### The V3 Path: Space-Time Density Eviction
 
@@ -187,9 +218,9 @@ The Space-Time density framework (Section 7.1) provides the theoretical foundati
 
 A promising direction is integrating Space-Time density with the admission control gate from V2: reject entries with high $\text{Size} \times \mathbb{E}[\Delta t]$ relative to their expected value, preventing the cardinality collapse observed in our V2 experiments while still leveraging the $O(N^2)$ cost awareness that gives learned policies their value advantage.
 
-## 11. Conclusion
+## 12. Conclusion
 
-We presented a three-tier KV cache persistence system with learned eviction policies and evaluated five policy variants across three workload profiles. Our investigation yielded three key insights: (1) binary classification eviction fails under capacity constraints due to a Knapsack formulation mismatch; (2) static Fractional Knapsack optimization collapses cache cardinality in dynamic systems governed by Little's Law; and (3) learned policies can maximize cache *value* rather than cache *count*, outperforming LRU by \$68/day on high-variance workloads despite a lower hit rate. We propose Space-Time density as the theoretically grounded objective for next-generation eviction policy design.
+We presented a three-tier KV cache persistence system with learned eviction policies and evaluated five policy variants across three workload profiles, validated end-to-end with TinyLlama-1.1B on real KV cache data. Our investigation yielded three key insights: (1) binary classification eviction fails under capacity constraints due to a Knapsack formulation mismatch; (2) static Fractional Knapsack optimization collapses cache cardinality in dynamic systems governed by Little's Law; and (3) learned policies can maximize cache *value* rather than cache *count*, outperforming LRU by \$68/day on high-variance workloads despite a lower hit rate. Our prototype validation demonstrates a 48x TTFT improvement with semantically lossless cache restoration. We propose Space-Time density as the theoretically grounded objective for next-generation eviction policy design.
 
 ---
 
