@@ -2,7 +2,6 @@
 Main orchestrator for tiered KV cache storage.
 """
 
-import time
 import logging
 from typing import Dict, Tuple, Optional, Any
 import numpy as np
@@ -13,15 +12,27 @@ from ..tiers import HotTier, WarmTier, ColdTier, StorageTier
 from ..serialization import create_serializer, create_compressor, CompressedSerializer
 from ..eviction import create_eviction_policy
 from ..utils.metrics import metrics
+from ..utils.clock import Clock, SystemClock
 
 logger = logging.getLogger(__name__)
 
 class TieredCacheManager:
-    """Orchestrates KV cache storage across hot, warm, and cold tiers."""
-    
-    def __init__(self, config: SystemConfig):
+    """Orchestrates KV cache storage across hot, warm, and cold tiers.
+
+    Concurrency: individual tiers guard their own storage with locks, but
+    multi-step operations on this manager (save/load/promote/demote, which
+    touch two tiers plus the index and eviction policy) are NOT atomic.
+    The manager assumes a single caller thread; wrap calls in an external
+    lock if sharing across threads.
+
+    Time: all timestamps are read from the injected Clock so trace-driven
+    experiments can run on simulated time (see utils/clock.py).
+    """
+
+    def __init__(self, config: SystemConfig, clock: Optional[Clock] = None):
         self.config = config
-        
+        self.clock = clock or SystemClock()
+
         # Initialize tiers
         self.hot_tier = HotTier(config.tiers.hot_capacity_mb * 1024 * 1024)
         self.warm_tier = WarmTier(
@@ -56,7 +67,8 @@ class TieredCacheManager:
             beta=config.eviction.predictive_beta,
             gamma=config.eviction.predictive_gamma
         )
-        
+        self.eviction_policy.set_clock(self.clock)
+
     def _get_tier(self, tier_name: str) -> StorageTier:
         if tier_name == "hot": return self.hot_tier
         if tier_name == "warm": return self.warm_tier
@@ -71,16 +83,15 @@ class TieredCacheManager:
                 data = self.serializer.serialize(kv_data, self.config.model)
                 
             data_size = len(data)
-            
-            # Ensure space in hot tier
-            while self.hot_tier.is_full(data_size):
-                evicted = self.evict_from_tier("hot")
-                if not evicted:
-                    # Hot tier couldn't free space — save directly to warm
-                    self._ensure_space_in_tier("warm", data_size)
-                    self._save_to_tier("warm", session_id, user_id, data, kv_data, metadata)
-                    return
-                    
+
+            # Ensure space in hot tier (attempt-capped, see _ensure_space_in_tier)
+            self._ensure_space_in_tier("hot", data_size)
+            if self.hot_tier.is_full(data_size):
+                # Hot tier couldn't free space — save directly to warm
+                self._ensure_space_in_tier("warm", data_size)
+                self._save_to_tier("warm", session_id, user_id, data, kv_data, metadata)
+                return
+
             self._save_to_tier("hot", session_id, user_id, data, kv_data, metadata)
 
     def _ensure_space_in_tier(self, tier_name: str, data_size: int) -> None:
@@ -102,8 +113,8 @@ class TieredCacheManager:
         # Token count from layer 0 key tensor
         token_count = kv_data[0][0].shape[1] if kv_data else 0
         num_blocks = (token_count + self.config.model.block_size - 1) // self.config.model.block_size
-        
-        now = time.time()
+
+        now = self.clock.now()
         
         # Update or create entry
         entry = self.index.get(session_id)
@@ -154,7 +165,7 @@ class TieredCacheManager:
             metrics.record("cache.hit", 1, {"tier": tier_name})
             
             # Update metadata
-            entry.last_accessed = time.time()
+            entry.last_accessed = self.clock.now()
             entry.access_count += 1
             self.eviction_policy.on_access(session_id, entry)
             

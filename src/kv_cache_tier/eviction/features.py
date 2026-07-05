@@ -5,9 +5,12 @@ Extracts structured features from raw session metadata and user history
 to feed into learned eviction models (Logistic Regression, GBT).
 """
 
+import threading
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import numpy as np
+
+from ..utils.clock import Clock, SystemClock
 
 
 @dataclass
@@ -57,3 +60,58 @@ class SessionFeatures:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+class FeatureExtractor:
+    """
+    Builds SessionFeatures from CacheEntry metadata plus per-user access
+    history. Shared by all ML-backed eviction policies so that feature
+    semantics cannot drift between them, and reads time exclusively from
+    the injected Clock so that simulated experiments produce features on
+    the same scale the models were trained on.
+    """
+
+    HISTORY_LIMIT = 50  # accesses retained per user
+
+    def __init__(self, clock: Optional[Clock] = None):
+        self.clock = clock or SystemClock()
+        # user_id -> [(session_id, timestamp, token_count)]
+        self._user_history: Dict[str, List[tuple]] = {}
+        self._lock = threading.Lock()
+
+    def set_clock(self, clock: Clock) -> None:
+        self.clock = clock
+
+    def record_access(self, user_id: str, session_id: str, token_count: int) -> None:
+        with self._lock:
+            history = self._user_history.setdefault(user_id, [])
+            history.append((session_id, self.clock.now(), token_count))
+            if len(history) > self.HISTORY_LIMIT:
+                del history[: len(history) - self.HISTORY_LIMIT]
+
+    def build(self, entry: Any) -> SessionFeatures:
+        """Build the feature vector for a cache entry as of clock.now()."""
+        now = self.clock.now()
+        history = self._user_history.get(entry.user_id, [])
+        total_user_sessions = len(set(sid for sid, _, _ in history))
+        total_user_resumes = max(0, len(history) - total_user_sessions)
+        user_return_rate = min(total_user_resumes / max(total_user_sessions, 1), 1.0)
+        if history:
+            avg_tokens = sum(tc for _, _, tc in history) / len(history)
+        else:
+            avg_tokens = float(entry.token_count)
+
+        hour_of_day = self.clock.hour_of_day()
+        day_of_week = self.clock.day_of_week()
+
+        return SessionFeatures(
+            session_age_minutes=(now - entry.created_at) / 60.0,
+            token_count=entry.token_count,
+            revisit_count=entry.access_count - 1,  # first access is the creation
+            time_since_last_access_minutes=(now - entry.last_accessed) / 60.0,
+            hour_of_day=hour_of_day,
+            day_of_week=day_of_week,
+            user_historical_return_rate=user_return_rate,
+            is_business_hours=1 if (9 <= hour_of_day < 17 and day_of_week < 5) else 0,
+            avg_session_tokens=avg_tokens,
+        )

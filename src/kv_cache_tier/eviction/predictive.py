@@ -8,16 +8,19 @@ Supports three strategy modes:
 
 When an ML model is loaded, select_victim() evicts the session with the
 LOWEST predicted probability of being resumed.
+
+All time reads go through self.clock (see utils/clock.py) so that
+trace-driven experiments evaluate the model on the same feature scales
+it was trained on.
 """
 
-import time
 import math
-import threading
 import logging
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any
 
 from .base import EvictionPolicy
-from .features import SessionFeatures
+from .features import FeatureExtractor
+from ..utils.clock import Clock
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,7 @@ class PredictiveEvictionPolicy(EvictionPolicy):
         gamma: float = 0.2,
         decay_half_life: int = 1800,
         model_path: Optional[str] = None,
+        clock: Optional[Clock] = None,
     ):
         self.strategy = strategy
         self.alpha = alpha
@@ -48,14 +52,18 @@ class PredictiveEvictionPolicy(EvictionPolicy):
         self.gamma = gamma
         self.decay_half_life = decay_half_life  # seconds (e.g. 30 mins)
 
-        # Tracks user access history: user_id -> [(session_id, timestamp, token_count)]
-        self._user_history: Dict[str, List[tuple]] = {}
-        self._lock = threading.Lock()
+        self._features = FeatureExtractor(clock)
+        if clock is not None:
+            self.clock = clock
 
         # ML model (loaded lazily or from path)
         self._predictor = None
         if strategy in ("logistic", "gbt") and model_path:
             self._load_model(model_path)
+
+    def set_clock(self, clock: Clock) -> None:
+        super().set_clock(clock)
+        self._features.set_clock(clock)
 
     def _load_model(self, path: str):
         """Load a trained ResumePredictor from disk."""
@@ -77,24 +85,14 @@ class PredictiveEvictionPolicy(EvictionPolicy):
         return f"predictive_{self.strategy}"
 
     def on_access(self, session_id: str, entry: Any) -> None:
-        self._record_access(entry.user_id, session_id, entry.token_count)
+        self._features.record_access(entry.user_id, session_id, entry.token_count)
 
     def on_insert(self, session_id: str, entry: Any) -> None:
-        self._record_access(entry.user_id, session_id, entry.token_count)
+        self._features.record_access(entry.user_id, session_id, entry.token_count)
 
     def on_remove(self, session_id: str) -> None:
         # We keep history even after eviction to learn user patterns
         pass
-
-    def _record_access(self, user_id: str, session_id: str, token_count: int):
-        with self._lock:
-            if user_id not in self._user_history:
-                self._user_history[user_id] = []
-            self._user_history[user_id].append((session_id, time.time(), token_count))
-
-            # Prune history (keep last 50 accesses)
-            if len(self._user_history[user_id]) > 50:
-                self._user_history[user_id] = self._user_history[user_id][-50:]
 
     # ------------------------------------------------------------------
     # Scoring
@@ -113,7 +111,7 @@ class PredictiveEvictionPolicy(EvictionPolicy):
     def _heuristic_scores(self, entries: Dict[str, Any]) -> Dict[str, float]:
         """Original weighted heuristic scoring."""
         scores = {}
-        now = time.time()
+        now = self.clock.now()
 
         max_access = max((e.access_count for e in entries.values()), default=1)
         max_tokens = max((e.token_count for e in entries.values()), default=1)
@@ -132,42 +130,15 @@ class PredictiveEvictionPolicy(EvictionPolicy):
         return scores
 
     def _ml_scores(self, entries: Dict[str, Any]) -> Dict[str, float]:
-        """Score entries using a trained ML predictor."""
-        now = time.time()
-        scores = {}
+        """Score entries using a trained ML predictor.
 
-        for session_id, entry in entries.items():
-            # Build SessionFeatures from the CacheEntry
-            user_id = entry.user_id
-            history = self._user_history.get(user_id, [])
-            total_user_sessions = len(set(sid for sid, _, _ in history))
-            total_user_resumes = max(0, len(history) - total_user_sessions)
-            user_return_rate = total_user_resumes / max(total_user_sessions, 1)
-
-            session_age_minutes = (now - entry.created_at) / 60.0
-            time_since_last_minutes = (now - entry.last_accessed) / 60.0
-
-            # Simulate hour/day from real clock
-            import datetime
-            dt = datetime.datetime.now()
-            hour_of_day = dt.hour
-            day_of_week = dt.weekday()
-
-            feat = SessionFeatures(
-                session_age_minutes=session_age_minutes,
-                token_count=entry.token_count,
-                revisit_count=entry.access_count - 1,  # first access is the creation
-                time_since_last_access_minutes=time_since_last_minutes,
-                hour_of_day=hour_of_day,
-                day_of_week=day_of_week,
-                user_historical_return_rate=min(user_return_rate, 1.0),
-                is_business_hours=1 if (9 <= hour_of_day < 17 and day_of_week < 5) else 0,
-                avg_session_tokens=float(entry.token_count),  # approximate with current session
-            )
-
-            scores[session_id] = self._predictor.predict_resume_probability(feat)
-
-        return scores
+        Scores the whole candidate set in ONE predict_batch call: per-entry
+        single-row sklearn predictions are ~100x slower in aggregate and were
+        the dominant cost of ML-policy eviction sweeps."""
+        ids = list(entries.keys())
+        feats = [self._features.build(entries[sid]) for sid in ids]
+        probs = self._predictor.predict_batch(feats)
+        return dict(zip(ids, probs.tolist()))
 
     # ------------------------------------------------------------------
     # Eviction decisions

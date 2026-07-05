@@ -1,26 +1,26 @@
 {
   "logistic": {
-    "train_accuracy": 0.6023917049757994,
-    "train_auc": 0.5565335391728767,
-    "test_accuracy": 0.6044957472660997,
-    "test_auc": 0.5579553161599393,
+    "train_accuracy": 0.6424731782392434,
+    "train_auc": 0.7016666828676922,
+    "test_accuracy": 0.6441635687732342,
+    "test_auc": 0.7022218146880762,
     "coefficients": {
-      "session_age_minutes": -0.012877600958034894,
-      "token_count": -0.009007434608877384,
-      "revisit_count": 0.024564116212781782,
-      "time_since_last_access_minutes": 0.0007085296214387597,
-      "hour_of_day": -0.029461742891804327,
-      "day_of_week": -0.06231600435989061,
-      "user_historical_return_rate": 0.4539846361312319,
-      "is_business_hours": -0.01689018814269053,
-      "avg_session_tokens": -0.03535846429350977
+      "session_age_minutes": -0.276311937115239,
+      "token_count": -0.03256632640589734,
+      "revisit_count": -0.30783266740781773,
+      "time_since_last_access_minutes": -0.003097457574422493,
+      "hour_of_day": -0.04831066128239833,
+      "day_of_week": -0.14188583965545098,
+      "user_historical_return_rate": 0.7522356645045638,
+      "is_business_hours": -0.022967257772915167,
+      "avg_session_tokens": -0.12507884123438534
     }
   },
   "gbt": {
-    "train_accuracy": 0.6162437473419875,
-    "train_auc": 0.5802891651836705,
-    "test_accuracy": 0.6131429728635075,
-    "test_auc": 0.5644700498172787,
+    "train_accuracy": 0.6727187562732808,
+    "train_auc": 0.7333251122367433,
+    "test_accuracy": 0.6729219330855019,
+    "test_auc": 0.7299728312356244,
     "feature_importances": {}
   }
 }
