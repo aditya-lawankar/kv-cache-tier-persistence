@@ -35,8 +35,9 @@
 \setlist{nosep,leftmargin=1.5em}
 
 % ─── Title ───────────────────────────────────────────────────
-\title{\Large \bf When Does Value-Density Eviction Help?\\
-A Workload-Dependent Analysis of KV Cache Eviction for LLM Serving}
+\title{\Large \bf Hit Rate Is Not Value:\\
+A Rigorous Evaluation of Learned and Value-Aware Eviction\\
+for Tiered LLM KV-Cache Persistence}
 
 \author{
   {\rm Aditya Lawankar} \\
@@ -50,7 +51,9 @@ A Workload-Dependent Analysis of KV Cache Eviction for LLM Serving}
 
 % ═════════════════════════════════════════════════════════════
 \begin{abstract}
-Large Language Model serving is bottlenecked by memory capacity for Key-Value (KV) caches. Multi-turn conversations and long-context workloads force frequent cache eviction and costly recomputation (the ``cold-start'' problem). We build a three-tier KV cache persistence system and evaluate learned eviction policies across three workload profiles. Our investigation yields three findings: (1)~binary classification eviction underperforms LRU by 16 percentage points due to a Knapsack formulation mismatch; (2)~static Fractional Knapsack optimization collapses cache cardinality in dynamic systems governed by Little's Law, dropping hit rates by 23 points on heavy-tailed workloads; and (3)~despite a lower hit rate, our learned policy achieves \$68/day higher GPU savings than LRU on power-user workloads by disproportionately retaining expensive-to-recompute sessions. We validate end-to-end with TinyLlama-1.1B, demonstrating 48$\times$ TTFT improvement with semantically lossless cache restoration. We propose Space-Time density as the theoretically grounded objective for next-generation eviction policy design.
+Large Language Model serving is bottlenecked by memory capacity for Key-Value (KV) caches. Multi-turn conversations force frequent cache eviction and costly recomputation (the ``cold-start'' problem). We build a three-tier KV cache persistence system (VRAM $\to$ NVMe $\to$ object storage) and evaluate six eviction policies---LRU, a recency heuristic, learned binary classification, static value-density, and a lifetime-normalized space-time density policy---under a statistically rigorous protocol: virtual-clock trace replay, persona-driven synthetic workloads, tier-discounted value accounting, and paired comparisons across 10 seeds with 95\% confidence intervals.
+
+Our evaluation yields four findings. (1)~\emph{LRU is a far stronger baseline than commonly assumed}: under honest accounting it wins both hit rate and dollar value on every capacity-constrained workload we test, with all paired deltas significant. (2)~\emph{Hit rate and value decouple}: on heavy-tailed workloads a simple heuristic retains 97.5\% of LRU's GPU-dollar value while conceding 12 hit-rate points, and policy rankings by hit rate invert under value---our learned classifier beats space-time density by 9 hit-rate points yet delivers \$46/day \emph{less} value. (3)~\emph{Static value-density eviction collapses}: maximizing value-per-byte without bounding sojourn time violates Little's Law dynamics, and our lifetime-normalized space-time objective recovers \$94/day over it (95\% CI [77, 112]). (4)~A break-even analysis shows tiered persistence is latency-positive from $N^{*}{\approx}12$ tokens for 70B-class GQA models but only beyond ${\sim}43$k tokens for 7B MHA models---the KV-bytes-per-FLOP ratio, not model quality, governs deployability. We validate end-to-end with TinyLlama-1.1B, demonstrating 48$\times$ TTFT improvement on CPU with byte-identical greedy decoding from restored caches.
 \end{abstract}
 
 % CCS / Index terms
@@ -62,15 +65,15 @@ Large Language Model serving is bottlenecked by memory capacity for Key-Value (K
 
 The cold-start problem in LLM inference occurs when a user resumes a session whose KV cache has been evicted from VRAM. The system must reprocess the entire prompt history through the transformer's prefill phase, wasting compute and increasing time-to-first-token (TTFT). Existing systems like vLLM~\cite{kwon2023pagedattention} rely on reactive LRU eviction, discarding valuable context without regard to recompute cost.
 
-We explore tiered persistence (VRAM $\to$ NVMe $\to$ Object Storage) combined with predictive eviction. By proactively migrating idle sessions to cheaper tiers, we hypothesized we could improve cache hit rates. Our investigation uncovered fundamental limitations in applying textbook optimization to dynamic systems, yielding insights generalizable beyond KV caching.
+We explore tiered persistence (VRAM $\to$ NVMe $\to$ Object Storage) combined with predictive eviction. By proactively migrating idle sessions to cheaper tiers, we hypothesized that a learned eviction policy would improve cache hit rates over LRU. \emph{The data falsified this hypothesis}---and diagnosing why became the contribution: eviction under capacity constraints is a packing problem, a cache is a dynamic system governed by Little's Law rather than a static knapsack, and hit rate misprices heavy-tailed workloads whose items have quadratically varying recompute costs.
 
 This paper makes the following contributions:
 \begin{enumerate}
-  \item A \textbf{three-tier KV cache persistence system} with pluggable eviction backends supporting LRU, heuristic, ML-based, and value-density policies.
-  \item An \textbf{empirical demonstration that binary classification eviction fails} under constrained capacity due to a Knapsack formulation mismatch, underperforming LRU by 16 percentage points.
-  \item The discovery that \textbf{static Fractional Knapsack optimization collapses cache cardinality} in dynamic systems governed by Little's Law.
-  \item Evidence that \textbf{learned policies can maximize cache value} (\$/Day) rather than hit count on high-variance workloads, outperforming LRU by \$68/day despite lower hit rate.
-  \item A \textbf{Space-Time density framework} as the theoretically grounded objective for future eviction policy design.
+  \item A \textbf{three-tier KV cache persistence system} with pluggable eviction backends (LRU, heuristic, learned classification, value-density, space-time density) and a \textbf{rigorous evaluation protocol}: virtual-clock replay, persona-driven workloads, tier-discounted value accounting, and paired multi-seed statistics.
+  \item Evidence that \textbf{LRU is a stronger baseline than the learned-caching literature assumes}: it wins both hit rate and dollar value on every constrained workload we test (all paired deltas significant at 95\%).
+  \item The demonstration that \textbf{hit rate and cache value decouple} on heavy-tailed workloads---policy rankings invert between the two metrics---so hit rate alone is the wrong target for KV-cache eviction research.
+  \item The discovery that \textbf{static value-density optimization collapses cache cardinality} under Little's Law dynamics, and an implemented \textbf{space-time density policy} (an LHD-style objective adapted to quadratic recompute costs) that significantly recovers value over it.
+  \item An analytic \textbf{break-even model} for when restoration beats recomputation, showing $N^{*}$ varies by four orders of magnitude with model architecture.
 \end{enumerate}
 
 % ═════════════════════════════════════════════════════════════
@@ -83,16 +86,20 @@ The self-attention mechanism in transformer-based LLMs attends to all previous t
 The provably optimal offline eviction policy~\cite{belady1966replacement} evicts the item whose next access occurs furthest in the future: $\arg\max_{i} \text{next\_access}(i)$. For uniform-size, uniform-cost items, LRU is an effective online proxy by assuming temporal locality.
 
 \subsection{Weighted Caching}
-When items have varying sizes and costs, the uniform assumption fails. The problem maps to a dynamic Fractional Knapsack. As formalized by Young~\cite{young1994caching}, optimal eviction must maximize value density per byte. In KV caching, ``value'' is the quadratic GPU compute saved by avoiding a cold-start prefill, and ``weight'' is the linear VRAM consumed.
+When items have varying sizes and costs, the uniform assumption fails. The problem maps to a dynamic Fractional Knapsack. As formalized by Young~\cite{young1994caching} and made practical by GreedyDual-Size~\cite{cao1997greedydualsize}, cost-aware eviction must account for value density per byte. LHD~\cite{beckmann2018lhd} further showed that for \emph{dynamic} caches the correct denominator is not size alone but size $\times$ expected lifetime---``hit density.'' In KV caching, ``value'' is the quadratic GPU compute saved by avoiding a cold-start prefill, and ``weight'' is the linear VRAM consumed; our results (\S\ref{sec:eval}) empirically rediscover why the static form of this objective fails and the lifetime-normalized form is required.
 
 % ═════════════════════════════════════════════════════════════
 \section{Related Work}
 
-PagedAttention~\cite{kwon2023pagedattention} partitions the KV cache into fixed-size blocks, eliminating fragmentation and enabling memory sharing. vLLM manages VRAM dynamically but relies on reactive LRU eviction. CachedAttention~\cite{gim2024cachedattention} supports cross-request caching at the attention layer, though its focus is architectural integration rather than learned eviction policies.
+\textbf{LLM serving systems.} PagedAttention~\cite{kwon2023pagedattention} partitions the KV cache into fixed-size blocks, eliminating fragmentation and enabling memory sharing. vLLM manages VRAM dynamically but relies on reactive LRU eviction. CachedAttention~\cite{gao2024cachedattention} persists KV caches across multi-turn conversation rounds through a hierarchical cache, though its focus is architectural integration rather than learned eviction policies.
 
 LMCache~\cite{zhong2024lmcache} and CacheBlend~\cite{yao2024cacheblend} focus on cross-request prefix sharing---caching system prompts shared across users. Our work targets single-session persistence: saving user-specific conversational state over long time horizons, where the challenge is predicting which sessions will return.
 
 Mooncake~\cite{qin2025mooncake} proposes a disaggregated KV cache architecture using a tiered hierarchy across nodes. Our work shares the tiered storage motivation but targets the algorithmic eviction policy layer. Where Mooncake asks ``how do we distribute cache across a cluster?'', we ask ``which entries should we keep when capacity is constrained?''
+
+\textbf{Token-level KV compression.} H2O~\cite{zhang2023h2o} and InfiniGen~\cite{lee2024infinigen} evict or offload individual \emph{tokens} within a sequence's KV cache. This is orthogonal to our granularity: we decide which \emph{sessions} to retain across tiers, and token-level compression could be composed with our policies to shrink what we store.
+
+\textbf{Learned cache eviction.} LRB~\cite{song2020lrb} learns to approximate B\'{e}l\'{a}dy's oracle for CDN caching; LHD~\cite{beckmann2018lhd} maximizes hits per unit of space-time occupied. Our work differs in the value model: CDN objects have roughly uniform miss costs, whereas KV cache entries have \emph{quadratically} varying recompute costs, which changes both the correct objective (\S\ref{sec:std}) and, as we show, the correct evaluation metric.
 
 % ═════════════════════════════════════════════════════════════
 \section{System Design}
@@ -112,6 +119,7 @@ The system exposes three operations: \texttt{save} (serialize and write to hot t
 \caption{Tier transition pipeline}
 \label{tab:transitions}
 \small
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{@{}llll@{}}
 \toprule
 Transition & Serialization & Compression & Rationale \\
@@ -128,9 +136,9 @@ Serialization uses a custom binary format with a 64-byte header (magic bytes, ve
 % ═════════════════════════════════════════════════════════════
 \section{Eviction Policy V1: Binary Classification}
 
-Our initial approach formulated eviction as supervised ML: predict $P(\text{resume})$ that a session will be accessed again within 1~hour. We engineered 9~features capturing temporal patterns, access behavior, user history, and session characteristics. We trained Logistic Regression and Gradient Boosted Trees (GBT) on 10,000 synthetic trace events (80/20 split). GBT achieved marginally higher accuracy but introduced prohibitive P95 latency (${\sim}359$ms vs ${\sim}100$ms for Logistic Regression) and is excluded from the main evaluation.
+Our initial approach formulated eviction as supervised ML: predict $P(\text{resume})$ that a session will be accessed again within 1~hour. We engineered 9~features capturing temporal patterns, access behavior, user history, and session characteristics, and trained Logistic Regression and Gradient Boosted Trees on 7-day persona-driven traces (80/20 split). Test AUC is 0.70 (logistic) and 0.73 (GBT); we use the logistic model in the main study for interpretability---its strongest positive coefficient is the user's historical return rate ($+0.75$), confirming the personas carry learnable signal. Candidate sets are scored in a single batched prediction per eviction sweep.
 
-\textbf{Negative Result:} Under enterprise load with 30MB capacity, Logistic~V1 achieved only \textbf{39.13\%} hit rate---significantly worse than LRU's \textbf{55.25\%}.
+\textbf{Negative Result:} Under enterprise load, Logistic~V1 achieves \textbf{67.9\%} hit rate [66.8, 69.0] versus LRU's \textbf{79.2\%} [75.9, 82.4]---an 11-point deficit that also translates to \$230/day less GPU value (paired 95\% CI $[-323, -138]$; Table~\ref{tab:results}).
 
 % ═════════════════════════════════════════════════════════════
 \section{Failure Analysis}
@@ -138,7 +146,7 @@ Our initial approach formulated eviction as supervised ML: predict $P(\text{resu
 This exposed a fundamental flaw: \textbf{eviction under capacity constraints is not a classification problem; it is a Knapsack variant.} LRU accidentally approximated correct behavior by rotating entries uniformly. Our ML models confidently kept large ``high probability'' sessions that choked capacity, forcing out dozens of smaller entries. The binary criterion $\min P(\text{resume})$ ignores both entry size and variable recompute cost.
 
 % ═════════════════════════════════════════════════════════════
-\section{Eviction Policy V2: Value-Density Maximization}
+\section{Eviction Policies V2 \& V3: Value Density and Space-Time Density}
 
 We reformulated the objective based on weighted caching theory:
 \begin{equation}
@@ -149,14 +157,19 @@ We reformulated the objective based on weighted caching theory:
 Because prefill scales $O(N^2)$ but memory scales $O(N)$, longer contexts have exponentially higher value density. We also implemented an \textbf{Admission Control Gate}: sessions below a value-density threshold are denied entry to the warm tier.
 
 \subsection{Space-Time Density: Why Static Knapsack Fails}
+\label{sec:std}
 
 Our evaluation revealed that static value-density collapses in practice (\S\ref{sec:eval}). A cache is not a static knapsack---it is a dynamic system governed by Little's Law. Each entry occupies \emph{space over time}. The correct objective must account for expected sojourn time $\mathbb{E}[\Delta t]$:
 \begin{equation}
   \text{Space-Time Density} = \frac{P(\text{resume}) \times \text{RecomputeCost}(N)}{\text{Size}(N) \times \mathbb{E}[\Delta t]}
-  \label{eq:std}
+  \label{eq:std_eq}
 \end{equation}
 
-Under Little's Law, $L = \lambda \times W$, where $L$ is steady-state items, $\lambda$ is arrival rate, and $W$ is average sojourn time. Maximizing $\text{Value}/\text{Byte}$ without bounding $W$ allows large sessions to accumulate unbounded sojourn time, reducing $L$ (cardinality) and collapsing hit rates. This formulation provides the theoretical foundation for a V3 policy.
+Under Little's Law, $L = \lambda \times W$, where $L$ is steady-state items, $\lambda$ is arrival rate, and $W$ is average sojourn time. Maximizing $\text{Value}/\text{Byte}$ without bounding $W$ allows large sessions to accumulate unbounded sojourn time, reducing $L$ (cardinality) and collapsing hit rates.
+
+This objective is structurally an adaptation of LHD's hit density~\cite{beckmann2018lhd}---expected hits per unit of size $\times$ lifetime---to the KV-cache setting. The adaptation is non-trivial in two respects: the numerator weights each hit by a \emph{quadratic} recompute cost rather than counting hits uniformly, and $P(\text{resume})$ comes from a learned session-level model rather than age-binned statistics.
+
+\textbf{V3 Implementation.} We estimate $\mathbb{E}[\Delta t]$ per session as an exponential moving average ($\alpha{=}0.3$) of observed inter-access gaps, with a 2-hour prior for sessions with no observed gap. Because an entry idle \emph{longer} than its typical rhythm should expect a longer remaining wait, not a shorter one (the inspection paradox), we score with $\max(\text{EMA gap}, \text{current idle time})$. Candidate sets are re-scored on each eviction sweep.
 
 % ═════════════════════════════════════════════════════════════
 \section{Experimental Setup}
@@ -168,42 +181,49 @@ We evaluated eviction policies using a synthetic workload simulator with three p
   \item \textbf{Power User:} 80/hr, $\mu{=}8192$, $\sigma{=}1.2$, medium return probability.
 \end{itemize}
 
+\textbf{User Personas.} Each simulated user carries a persistent persona---a return-propensity multiplier, a verbosity scale, and a 10-hour diurnal activity window---drawn once and reused across all of that user's sessions. Without personas, per-user features such as historical return rate are i.i.d.\ noise by construction and no predictor can exceed chance (we measured AUC~0.56 under an i.i.d.\ pool vs.\ 0.70 with personas). Conversations grow monotonically: each resume appends new turns to the previously cached context.
+
+\textbf{Virtual Clock.} Traces are replayed on a simulated clock advanced to each event's timestamp. All components---the cache manager, eviction policies, and feature extraction---read time exclusively from this clock. This is essential for validity: replaying a 6-hour trace at wall-clock speed collapses every temporal feature (session age, idle time, hour of day) to near-zero, silently invalidating any policy that reasons about time while leaving order-based policies like LRU intact.
+
 \textbf{Model Configuration.} KV cache sizes are computed using a toy configuration (2~layers, 2~heads, head dimension~32, FP16). A production model (e.g., Llama-2 7B: 32~layers, 32~heads, head dimension~128) would increase sizes by ${\sim}256\times$, shifting absolute capacity dynamics but not relative policy comparisons.
 
-\textbf{Simulation.} 6-hour continuous window; token counts clamped to 8,192 to preserve heavy-tailed distributions, yielding a $498\times$ spread in quadratic recompute costs.
+\textbf{Simulation.} 6-hour continuous window; token counts clamped to 8,192 to preserve heavy-tailed distributions.
 
-\textbf{Capacity.} 500MB total (50MB hot + 150MB warm + 300MB cold), relaxed from 30MB used during V1 debugging.
+\textbf{Capacity.} 500MB total (50MB hot + 150MB warm + 300MB cold).
 
-\textbf{GPU Savings.} Computed by summing exact $O(N^2)$ recompute cost of each hit session, rather than multiplying hit rate by average cost.
+\textbf{GPU Savings.} Each hit is credited with the exact $O(N^2)$ recompute cost of the tokens \emph{actually cached} (not the grown context at resume time), minus the modeled cost of restoring the entry from the tier where it was found (NVMe: 10ms + size/2GB/s; object storage: 100ms + size/500MB/s). Hits are therefore tier-discounted: a cold-tier hit is worth less than a hot-tier hit.
 
-\textbf{Confidence Intervals.} 95\% CIs via bootstrap resampling (1,000 iterations).
+\textbf{Statistics.} Every (policy, workload) cell is run over 10 independent seeds. All policies replay the identical trace per seed, so policy comparisons are \emph{paired}: we report per-seed deltas against LRU with 95\% t-based confidence intervals across seeds.
 
 % ═════════════════════════════════════════════════════════════
 \section{Comparative Evaluation}
 \label{sec:eval}
 
-We evaluated 5 policies across 3 workloads. The casual workload achieved 100\% hit rate at 500MB---the cache was never constrained---so we focus on the two workloads where eviction pressure forces policy differentiation.
+We evaluated 6 policies across 3 workloads over 10 seeds. The casual workload achieved 100\% hit rate at 500MB---the cache was never constrained---so Table~\ref{tab:results} focuses on the two workloads where eviction pressure forces policy differentiation.
 
 \begin{table}[t]
 \centering
-\caption{Policy comparison across workloads (500MB, 6hr simulation)}
+\caption{Policy comparison (500MB, 6hr simulation, 10 seeds; mean with 95\% t-CI across seeds; $\Delta\$$ is the \emph{paired} per-day value delta vs.\ LRU on identical traces). Casual workload omitted: all policies reach 100\% hit rate unconstrained.}
 \label{tab:results}
 \small
-\begin{tabular}{@{}llrrrr@{}}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}llrrr@{}}
 \toprule
-Policy & Workload & Hit\% & 95\% CI & P95 & \$/Day \\
+Policy & Workload & Hit\% & \$/Day & $\Delta\$$ vs LRU [CI] \\
 \midrule
-LRU        & Enterprise & 97.09 & [96.2, 97.9] & 188ms & \$1,038 \\
-Heuristic  & Enterprise & 61.81 & [59.2, 64.3] & 171ms & \$661  \\
-Logistic   & Enterprise & 79.55 & [77.5, 81.5] & 325ms & \$850  \\
-ValDensity & Enterprise & 70.14 & [67.8, 72.5] & 362ms & \$750  \\
-ValDens+AC & Enterprise & 70.14 & [67.8, 72.5] & 365ms & \$750  \\
+LRU        & Enterprise & 79.2 & 2,723 & --- \\
+Heuristic  & Enterprise & 55.3 & 2,467 & $-255$ $[-312, -199]$ \\
+Logistic V1 & Enterprise & 67.9 & 2,492 & $-230$ $[-323, -138]$ \\
+ValDensity V2 & Enterprise & 47.9 & 2,465 & $-257$ $[-348, -167]$ \\
+ValDens+AC & Enterprise & 47.9 & 2,465 & $-258$ $[-348, -167]$ \\
+SpaceTime V3 & Enterprise & 51.2 & 2,559 & $-163$ $[-249, -77]$ \\
 \midrule
-LRU        & Power User & 92.64 & [89.2, 96.1] & 135ms & \$3,447 \\
-Heuristic  & Power User & 69.26 & [63.2, 74.9] & 105ms & \$2,832 \\
-Logistic   & Power User & 87.45 & [82.7, 91.3] & 191ms & \$3,515 \\
-ValDensity & Power User & 69.26 & [63.6, 75.8] & 184ms & \$3,303 \\
-ValDens+AC & Power User & 69.26 & [63.6, 75.8] & 186ms & \$3,303 \\
+LRU        & Power User & 96.0 & 1,649 & --- \\
+Heuristic  & Power User & 84.2 & 1,608 & $-41$ $[-60, -22]$ \\
+Logistic V1 & Power User & 83.9 & 1,435 & $-214$ $[-276, -152]$ \\
+ValDensity V2 & Power User & 71.9 & 1,447 & $-202$ $[-252, -152]$ \\
+ValDens+AC & Power User & 71.8 & 1,447 & $-202$ $[-252, -152]$ \\
+SpaceTime V3 & Power User & 74.8 & 1,481 & $-168$ $[-215, -120]$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -211,22 +231,26 @@ ValDens+AC & Power User & 69.26 & [63.6, 75.8] & 186ms & \$3,303 \\
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/figure1_hit_rate.png}
-  \caption{Cache hit rate by policy and workload with 95\% CI error bars. LRU dominates on enterprise; all policies struggle on power-user.}
+  \caption{Cache hit rate by policy and workload with 95\% CI error bars across 10 seeds. LRU dominates both constrained workloads.}
   \label{fig:hitrate}
 \end{figure}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/figure2_cost_savings.png}
-  \caption{Daily GPU cost savings. Despite lower hit rate, Logistic~V1 exceeds LRU by \$68/day on power-user workloads.}
+  \caption{Daily GPU cost savings with 95\% CIs. Note the compression of value gaps relative to hit-rate gaps on the power-user workload.}
   \label{fig:savings}
 \end{figure}
 
-\subsection{Why Knapsack Fails in Dynamic Caching}
+\subsection{LRU Is a Stronger Baseline Than Assumed}
 
-V2 Value Density plummeted to 69.26\% hit rate on power-user, underperforming LRU (92.64\%) and Logistic~V1 (87.45\%). The Fractional Knapsack algorithm is optimal for \emph{static} packing, but a cache is \emph{dynamic} under Little's Law. By maximizing value density, V2 retained massive 8,192-token sessions, dropping cache cardinality from ${\sim}250$ to ${\sim}15$. The cache was starved, and large sessions were eventually evicted before their high $P(\text{resume})$ could materialize into hits.
+Under honest evaluation---virtual-clock replay, cached-token crediting, tier-discounted hits, paired multi-seed statistics---\textbf{LRU wins both hit rate and dollar value on every constrained workload}, and every alternative's paired value deficit is statistically significant. We emphasize this because an earlier version of our own pipeline, which replayed traces at wall-clock speed and credited hits with unclamped resume-time token counts, showed a learned policy \emph{beating} LRU by \$68/day. That result was an artifact: collapsing simulated time zeroed the temporal features the model was trained on, and the accounting credited a different quantity than policies optimized. We report this reversal as a cautionary result for the learned-caching literature: \textbf{evaluation-harness bugs preferentially flatter complex policies}, because simple recency policies are insensitive to broken time.
 
-Admission control (V2+AC) produced no improvement at 500MB---under sustained load, the cache operates at near-full utilization regardless of filtering.
+\subsection{Why Static Knapsack Fails---and Lifetime Normalization Helps}
+
+V2 Value Density drops to 47.9\% hit rate on enterprise and 71.9\% on power-user, the worst of all policies. The Fractional Knapsack formulation is optimal for \emph{static} packing, but a cache is \emph{dynamic} under Little's Law: by maximizing value density, V2 retains massive sessions whose sojourn time is unbounded, starving cache cardinality. Admission control (V2+AC) produces no improvement---under sustained load the cache operates at near-full utilization regardless of filtering.
+
+The space-time correction (V3) directly tests the Little's Law diagnosis: dividing the same value density by $\mathbb{E}[\Delta t]$ recovers \textbf{+\$94/day over V2 on enterprise} (paired 95\% CI $[+77, +112]$) and \textbf{+\$34/day on power-user} $[+20, +49]$, with hit rate improvements of ${\sim}3$ points on both. The theory is validated directionally---lifetime normalization is the right correction---even though V3 still trails LRU. Closing that remaining gap is the open problem.
 
 \begin{figure}[t]
   \centering
@@ -235,11 +259,11 @@ Admission control (V2+AC) produced no improvement at 500MB---under sustained loa
   \label{fig:failuremodes}
 \end{figure}
 
-\subsection{Hit Rate Is the Wrong Metric}
+\subsection{Hit Rate and Value Decouple}
 
-Despite \emph{lower} hit rate than LRU (87.45\% vs 92.64\%), Logistic~V1 delivers \emph{higher} GPU savings (\$3,515 vs \$3,447)---a \$68/day difference. LRU retains sessions uniformly by recency; Logistic~V1 disproportionately retains long-context, high-return sessions where each hit saves \$20 of GPU compute rather than \$0.50. This \$68/day advantage corresponds to 80~power users/hr over 24~hours; at production scale, the gap compounds proportionally.
+Hit rate remains the wrong lens even where LRU wins. On the power-user workload, the heuristic policy concedes \textbf{11.9 hit-rate points} to LRU (84.2\% vs 96.0\%) yet retains \textbf{97.5\% of its dollar value} ($-\$41$/day of \$1,649): the hits it gives up are disproportionately cheap-to-recompute sessions. Rankings also invert between metrics: Logistic~V1 beats SpaceTime~V3 by 9.1 hit-rate points on power-user, yet delivers \textbf{\$46/day less value} (paired CI $[+25, +68]$ in V3's favor). A researcher selecting policies by hit rate would choose backwards.
 
-\textbf{The correct optimization target for learned cache policies is not hit rate---it is expected cache value.}
+\textbf{The correct optimization and evaluation target for KV-cache eviction is not hit rate---it is expected cache value.}
 
 % ═════════════════════════════════════════════════════════════
 \section{Prototype Validation: TinyLlama}
@@ -253,6 +277,7 @@ To validate with a real transformer, we integrated our \texttt{TieredCacheManage
 \caption{TinyLlama integration results (598-token prompt, CPU)}
 \label{tab:tinyllama}
 \small
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 Metric & Trial 1 & Trial 2 & Average \\
@@ -274,20 +299,64 @@ Warm-start TTFT of \textbf{241ms} versus cold-start 11,627ms represents a \textb
 \textbf{Cost Model Calibration.} Our simulation cost model (A100 GPU, \$2.50/hr) predicted 57,747ms for 598-token prefill versus actual 11,627ms on CPU---expected since model parameters must be calibrated per hardware. Relative policy comparisons remain valid.
 
 % ═════════════════════════════════════════════════════════════
+\section{When Does Persistence Beat Recompute? A Break-Even Analysis}
+\label{sec:breakeven}
+
+The 48$\times$ CPU speedup above should not be extrapolated to GPUs uncritically: on an A100, prefilling a 598-token prompt through a 1.1B model takes tens of milliseconds---comparable to the restore path itself. Persistence wins on raw latency only beyond a \emph{break-even context length} $N^{*}$, which we can derive analytically.
+
+Restoring a persisted cache moves $O(N)$ bytes:
+\begin{equation}
+  t_{\text{restore}}(N) = \ell_{\text{tier}} + \frac{2 \cdot L \cdot H_{kv} \cdot d \cdot b \cdot N}{B_{\text{tier}}}
+\end{equation}
+where $\ell$ is tier latency, $B$ bandwidth, $L$ layers, $H_{kv}$ KV heads, $d$ head dimension, $b$ bytes per element. Recomputing the prefill costs $O(N)$ weight FLOPs plus $O(N^2)$ attention:
+\begin{equation}
+  t_{\text{prefill}}(N) = \frac{2 P N + 4 L H_{q} d N^{2}}{F \cdot \eta}
+\end{equation}
+with $P$ parameters, $H_q$ \emph{query} heads (GQA shrinks the cache, not the score computation), $F$ peak FLOP/s, and $\eta$ the achievable utilization. Since restore is linear and prefill superlinear, persistence always wins beyond the crossover $N^{*}$.
+
+\begin{table}[t]
+\centering
+\caption{Break-even context length $N^{*}$ (A100, $\eta{=}0.45$; NVMe: 10ms + 2GB/s; object storage: 100ms + 500MB/s). Persistence wins on latency beyond $N^{*}$.}
+\label{tab:breakeven}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Model & KV/token & $N^{*}$ (NVMe) & $N^{*}$ (S3) \\
+\midrule
+TinyLlama-1.1B (GQA 4/32)  & 45 KB  & 1,561  & 25,901 \\
+Llama-2-7B (MHA 32/32)     & 512 KB & 43,559 & 254,203 \\
+Llama-2-70B (GQA 8/64)     & 320 KB & 12     & 289 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/figure4_breakeven.png}
+  \caption{Prefill recompute ($O(N^2)$, red) vs.\ tier restore ($O(N)$, black) latency by context length. The crossover $N^{*}$ varies by four orders of magnitude across model architectures.}
+  \label{fig:breakeven}
+\end{figure}
+
+Table~\ref{tab:breakeven} and Figure~\ref{fig:breakeven} expose the governing quantity: the ratio of KV bytes per token to prefill FLOPs per token. For MHA models like Llama-2-7B, the KV cache is so large relative to compute that NVMe restore only beats prefill past ${\sim}43$k tokens---persistence is a \emph{GPU-occupancy} optimization there, not a latency one. For large GQA models like Llama-2-70B, restore wins almost immediately ($N^{*}{=}12$ from NVMe): grouped attention shrinks bytes moved while parameters inflate FLOPs avoided. As the industry converges on GQA/MQA architectures, tiered KV persistence shifts from ``sometimes useful'' to near-universally latency-positive. (Analysis and figure reproducible via \texttt{benchmarks/breakeven\_analysis.py}.)
+
+% ═════════════════════════════════════════════════════════════
 \section{Discussion \& Future Work}
 
-\textbf{The Metric Mismatch.} Hit rate assumes uniform item value. In KV caching with quadratic recompute costs, this is catastrophically wrong. Production systems must adopt value-weighted metrics (e.g., GPU-seconds saved per decision).
+\textbf{The Metric Mismatch.} Hit rate assumes uniform item value. In KV caching with quadratic recompute costs this is catastrophically wrong: hit-rate gaps of 12 points can correspond to value gaps of 2.5\%, and policy rankings invert between the two metrics. Research and production systems must adopt value-weighted metrics (GPU-seconds saved per decision, discounted by restore cost).
 
-\textbf{Decision Framework.} (1)~Uniform workloads ($\sigma{=}0.5$): LRU dominates---ML overhead is unjustified. (2)~High-variance ($\sigma{=}1.2$): learned policies outperform \emph{by value}; evaluate by \$/Day. (3)~Extreme heterogeneity: static Value-Density is counterproductive; await Space-Time implementations.
+\textbf{Why does LRU win?} Three compounding reasons. First, our workloads exhibit strong temporal locality---the majority of resumes occur within an hour of the previous access---which is precisely LRU's inductive bias, obtained for free without a trained model. Second, value-aware policies pay a structural penalty under Little's Law that lifetime normalization only partially removes. Third, LRU is \emph{robust to evaluation bugs and distribution shift}: it consumes only access order, while learned policies consume nine features whose scales must match training exactly. We suspect published wins for learned eviction that do not control replay-time semantics deserve re-examination.
 
-\textbf{Limitations.} (1)~Synthetic workloads may miss real user correlations. (2)~CPU-only TinyLlama validation omits GPU-specific effects (CUDA fragmentation, PCIe overhead). (3)~Simulated tier latencies underestimate production I/O. (4)~Scaling to 70B models shifts absolute capacity dynamics.
+\textbf{Decision Framework.} (1)~Uniform workloads ($\sigma{=}0.5$): LRU dominates---ML overhead is unjustified. (2)~High-variance ($\sigma{=}1.2$): if the deployment metric is dollar value, simple recency heuristics are within noise of LRU and far cheaper than learned policies; evaluate by \$/Day, never hit rate. (3)~Value-aware eviction must be lifetime-normalized (V3), not static (V2)---but neither yet beats LRU.
 
-\textbf{V3 Path.} Space-Time density (Eq.~\ref{eq:std}) provides the V3 foundation. $\mathbb{E}[\Delta t]$ can be estimated via exponential smoothing with ${\sim}2$hr half-life. The key challenge is continuous re-scoring as entries age, requiring periodic sweeps rather than one-shot decisions. Integrating with admission control can prevent cardinality collapse while preserving $O(N^2)$ cost awareness.
+\textbf{Limitations.} (1)~Synthetic workloads, though persona-calibrated, may miss real user correlations; replaying production traces (e.g., Azure LLM inference traces) is the highest-priority extension. (2)~CPU-only TinyLlama validation omits GPU-specific effects (CUDA fragmentation, PCIe overhead); the break-even model (\S\ref{sec:breakeven}) bounds but does not measure them. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The toy KV geometry preserves relative policy comparisons but not absolute capacity dynamics.
+
+\textbf{Beating LRU.} V3's remaining gap suggests two directions: hybrid policies that default to recency and deviate only for entries in the extreme value tail, where the quadratic payoff dominates; and admission control at the \emph{cold-to-warm promotion} boundary rather than at eviction time, where the Little's Law penalty does not apply.
 
 % ═════════════════════════════════════════════════════════════
 \section{Conclusion}
 
-We presented a three-tier KV cache persistence system and evaluated five eviction policies across three workloads, validated end-to-end with TinyLlama-1.1B. Our investigation yielded three key insights: (1)~binary classification fails due to Knapsack mismatch; (2)~static Fractional Knapsack collapses cardinality under Little's Law; (3)~learned policies maximize cache \emph{value} over \emph{count}, outperforming LRU by \$68/day despite lower hit rate. Prototype validation demonstrates 48$\times$ TTFT improvement with lossless restoration. We propose Space-Time density as the objective for next-generation eviction design.
+We presented a three-tier KV cache persistence system and a statistically rigorous evaluation of six eviction policies across three workloads and ten seeds, validated end-to-end with TinyLlama-1.1B. Our investigation yielded four insights: (1)~under honest evaluation, LRU beats every learned and value-aware policy we tested on both metrics---and our own earlier harness bugs had shown the opposite, a caution for the learned-caching literature; (2)~hit rate and dollar value decouple on heavy-tailed workloads, to the point of inverting policy rankings; (3)~static value-density eviction collapses under Little's Law, and lifetime normalization (space-time density, an LHD adaptation) significantly recovers value; (4)~an analytic break-even model shows tiered persistence is latency-positive almost immediately for large GQA models. Prototype validation demonstrates 48$\times$ CPU TTFT improvement with byte-identical restoration. Beating LRU on value remains open; we believe hybrid recency/value-tail policies are the most promising path.
 
 % ═════════════════════════════════════════════════════════════
 \balance
