@@ -7,6 +7,7 @@ from .lru import LRUEvictionPolicy
 from .ttl import TTLEvictionPolicy
 from .predictive import PredictiveEvictionPolicy
 from .value_density import ValueDensityPolicy
+from .space_time import SpaceTimeDensityPolicy
 
 def create_eviction_policy(name: str, **kwargs) -> EvictionPolicy:
     """Factory method to create an eviction policy."""
@@ -25,15 +26,21 @@ def create_eviction_policy(name: str, **kwargs) -> EvictionPolicy:
         return ValueDensityPolicy(
             admission_threshold=kwargs.get("admission_threshold", 0.0)
         )
+    elif name == "space_time":
+        return SpaceTimeDensityPolicy(
+            prior_gap_seconds=kwargs.get("prior_gap_seconds", 2 * 3600.0),
+            ema_alpha=kwargs.get("ema_alpha", 0.3),
+        )
     else:
         raise ValueError(f"Unknown eviction policy: {name}")
 
 __all__ = [
     "EvictionPolicy",
     "LRUEvictionPolicy",
-    "TTLEvictionPolicy", 
+    "TTLEvictionPolicy",
     "PredictiveEvictionPolicy",
     "ValueDensityPolicy",
+    "SpaceTimeDensityPolicy",
     "create_eviction_policy"
 ]
 
