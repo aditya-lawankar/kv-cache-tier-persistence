@@ -37,3 +37,31 @@ def test_compressed_serializer_round_trip(model_config, sample_kv_data):
     data = ser.serialize(sample_kv_data, model_config)
     restored_kv, _ = ser.deserialize(data)
     assert kv_caches_equal(sample_kv_data, restored_kv)
+
+def test_raw_binary_checksum_detects_corruption(model_config, sample_kv_data):
+    """A persistence layer must detect silent corruption from storage."""
+    from kv_cache_tier.serialization.raw_binary_serde import ChecksumError, HEADER_SIZE
+
+    ser = RawBinarySerializer()
+    data = bytearray(ser.serialize(sample_kv_data, model_config))
+    # Flip one payload byte (past the 64-byte header)
+    data[HEADER_SIZE + 100] ^= 0xFF
+
+    with pytest.raises(ChecksumError):
+        ser.deserialize(bytes(data))
+
+def test_raw_binary_rejects_missing_layers(model_config, sample_kv_data):
+    """The wire format is dense; a sparse layer dict must fail loudly."""
+    ser = RawBinarySerializer()
+    sparse = dict(sample_kv_data)
+    del sparse[1]
+
+    with pytest.raises(ValueError, match="missing layers"):
+        ser.serialize(sparse, model_config)
+
+def test_raw_binary_rejects_truncated_payload(model_config, sample_kv_data):
+    ser = RawBinarySerializer()
+    data = ser.serialize(sample_kv_data, model_config)
+
+    with pytest.raises(ValueError):
+        ser.deserialize(data[: len(data) // 2])
