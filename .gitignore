@@ -13,6 +13,8 @@ htmlcov/
 benchmarks/results/*
 !benchmarks/results/experiment_results_v3_raw.json
 !benchmarks/results/experiment_results_v3_aggregate.json
+!benchmarks/results/experiment_results_azure_raw.json
+!benchmarks/results/experiment_results_azure_aggregate.json
 !benchmarks/results/tinyllama_integration_results.json
 
 # LaTeX build artifacts (paper.pdf at repo root is committed deliberately)

@@ -53,7 +53,7 @@ for Tiered LLM KV-Cache Persistence}
 \begin{abstract}
 Large Language Model serving is bottlenecked by memory capacity for Key-Value (KV) caches. Multi-turn conversations force frequent cache eviction and costly recomputation (the ``cold-start'' problem). We build a three-tier KV cache persistence system (VRAM $\to$ NVMe $\to$ object storage) and evaluate six eviction policies---LRU, a recency heuristic, learned binary classification, static value-density, and a lifetime-normalized space-time density policy---under a statistically rigorous protocol: virtual-clock trace replay, persona-driven synthetic workloads, tier-discounted value accounting, and paired comparisons across 10 seeds with 95\% confidence intervals.
 
-Our evaluation yields four findings. (1)~\emph{LRU is a far stronger baseline than commonly assumed}: under honest accounting it wins both hit rate and dollar value on every capacity-constrained workload we test, with all paired deltas significant. (2)~\emph{Hit rate and value decouple}: on heavy-tailed workloads a simple heuristic retains 97.5\% of LRU's GPU-dollar value while conceding 12 hit-rate points, and policy rankings by hit rate invert under value---our learned classifier beats space-time density by 9 hit-rate points yet delivers \$46/day \emph{less} value. (3)~\emph{Static value-density eviction collapses}: maximizing value-per-byte without bounding sojourn time violates Little's Law dynamics, and our lifetime-normalized space-time objective recovers \$94/day over it (95\% CI [77, 112]). (4)~A break-even analysis shows tiered persistence is latency-positive from $N^{*}{\approx}12$ tokens for 70B-class GQA models but only beyond ${\sim}43$k tokens for 7B MHA models---the KV-bytes-per-FLOP ratio, not model quality, governs deployability. We validate end-to-end with TinyLlama-1.1B, demonstrating 48$\times$ TTFT improvement on CPU with byte-identical greedy decoding from restored caches.
+Our evaluation yields four findings. (1)~\emph{LRU is a far stronger baseline than commonly assumed}: under honest accounting it wins both hit rate and dollar value on every capacity-constrained workload we test, with all paired deltas significant. (2)~\emph{Hit rate and value decouple}: on heavy-tailed workloads a simple heuristic retains 97.5\% of LRU's GPU-dollar value while conceding 12 hit-rate points, and policy rankings by hit rate invert under value---our learned classifier beats space-time density by 9 hit-rate points yet delivers \$46/day \emph{less} value. (3)~\emph{Static value-density eviction collapses}: maximizing value-per-byte without bounding sojourn time violates Little's Law dynamics, and our lifetime-normalized space-time objective recovers \$94/day over it (95\% CI [77, 112]). (4)~A break-even analysis shows tiered persistence is latency-positive from $N^{*}{\approx}12$ tokens for 70B-class GQA models but only beyond ${\sim}43$k tokens for 7B MHA models---the KV-bytes-per-FLOP ratio, not model quality, governs deployability. All behavioral findings replicate when replaying real production arrival timestamps and request sizes from the Azure LLM inference trace, where the hit-rate/value inversion is even stronger: a policy conceding 19 hit-rate points delivers \$105/day \emph{more} value. We validate end-to-end with TinyLlama-1.1B, demonstrating 48$\times$ TTFT improvement on CPU with byte-identical greedy decoding from restored caches.
 \end{abstract}
 
 % CCS / Index terms
@@ -69,7 +69,7 @@ We explore tiered persistence (VRAM $\to$ NVMe $\to$ Object Storage) combined wi
 
 This paper makes the following contributions:
 \begin{enumerate}
-  \item A \textbf{three-tier KV cache persistence system} with pluggable eviction backends (LRU, heuristic, learned classification, value-density, space-time density) and a \textbf{rigorous evaluation protocol}: virtual-clock replay, persona-driven workloads, tier-discounted value accounting, and paired multi-seed statistics.
+  \item A \textbf{three-tier KV cache persistence system} with pluggable eviction backends (LRU, heuristic, learned classification, value-density, space-time density) and a \textbf{rigorous evaluation protocol}: virtual-clock replay, persona-driven workloads, replay of the Azure LLM inference production trace, tier-discounted value accounting, and paired multi-seed statistics.
   \item Evidence that \textbf{LRU is a stronger baseline than the learned-caching literature assumes}: it wins both hit rate and dollar value on every constrained workload we test (all paired deltas significant at 95\%).
   \item The demonstration that \textbf{hit rate and cache value decouple} on heavy-tailed workloads---policy rankings invert between the two metrics---so hit rate alone is the wrong target for KV-cache eviction research.
   \item The discovery that \textbf{static value-density optimization collapses cache cardinality} under Little's Law dynamics, and an implemented \textbf{space-time density policy} (an LHD-style objective adapted to quadratic recompute costs) that significantly recovers value over it.
@@ -195,11 +195,20 @@ We evaluated eviction policies using a synthetic workload simulator with three p
 
 \textbf{Statistics.} Every (policy, workload) cell is run over 10 independent seeds. All policies replay the identical trace per seed, so policy comparisons are \emph{paired}: we report per-seed deltas against LRU with 95\% t-based confidence intervals across seeds.
 
+\subsection{Real-Trace Workload: Azure LLM Inference}
+\label{sec:realtrace}
+
+To test external validity beyond synthetic workloads, we additionally replay the Azure LLM inference trace~\cite{azurepublicdataset,stojkovic2025dynamollm}: 27.3M production conversation requests spanning one week of May 2024, each carrying an arrival timestamp and context/generated token counts. Two properties of the trace transfer into our replay verbatim: the \emph{arrival process} (real burstiness and diurnal/weekly load shape; timestamps keep their true UTC hour and weekday on the simulator's Monday-00:00 time axis) and \emph{per-request context sizes} (heavy-tailed: median 928, mean 1{,}632, p95 4{,}943 tokens).
+
+What the trace cannot provide is session identity: for customer privacy it carries no conversation identifiers, and we find linkage is not reconstructable either. A greedy matcher that chains requests by context-token growth (a follow-up turn's context must contain the previous turn's context plus its response) links 87.8\% of requests---but links an indistinguishable 87.8\% on a \emph{permutation control} in which token counts are shuffled across requests, destroying any true chains. At production density (${\sim}60$~req/s over at most 8{,}000 distinct context lengths) growth-chaining is collision-dominated, a caution for any study tempted to reconstruct conversations from these public traces. We therefore impose return behavior using the same persona machinery as the synthetic workloads (enterprise return-window parameters), with resume-time context growth drawn empirically from the window's generated-token distribution. Differences between the synthetic-enterprise and real-trace results are thus attributable to the arrival process and size distribution, which are real; return behavior is held fixed and modeled.
+
+We slice ten 6-hour windows across the week (covering weekday/weekend and peak/trough load) and thin each to 300 session starts per hour by taking every $k$-th request, preserving the arrival shape. The thinning rate is chosen for capacity pressure: real Azure requests are markedly smaller than synthetic enterprise sessions, so at the enterprise arrival rate (200/h) the 500\,MB cache is unconstrained (LRU ${\approx}98\%$ hit rate, no policy differentiation, as with the casual workload), while 300/h restores sustained eviction pressure comparable to the enterprise regime. Each window is one replicate: all six policies replay the identical event list, so deltas remain paired, with windows in the role of seeds. The learned policies reuse the predictor trained on synthetic personas---a zero-shot transfer test. The conversion is implemented in \texttt{benchmarks/azure\_trace\_loader.py}.
+
 % ═════════════════════════════════════════════════════════════
 \section{Comparative Evaluation}
 \label{sec:eval}
 
-We evaluated 6 policies across 3 workloads over 10 seeds. The casual workload achieved 100\% hit rate at 500MB---the cache was never constrained---so Table~\ref{tab:results} focuses on the two workloads where eviction pressure forces policy differentiation.
+We evaluated 6 policies across 3 synthetic workloads over 10 seeds, plus the real-trace replay of \S\ref{sec:realtrace} (results in \S\ref{sec:realtrace_results}). The casual workload achieved 100\% hit rate at 500MB---the cache was never constrained---so Table~\ref{tab:results} focuses on the two workloads where eviction pressure forces policy differentiation.
 
 \begin{table}[t]
 \centering
@@ -264,6 +273,37 @@ The space-time correction (V3) directly tests the Little's Law diagnosis: dividi
 Hit rate remains the wrong lens even where LRU wins. On the power-user workload, the heuristic policy concedes \textbf{11.9 hit-rate points} to LRU (84.2\% vs 96.0\%) yet retains \textbf{97.5\% of its dollar value} ($-\$41$/day of \$1,649): the hits it gives up are disproportionately cheap-to-recompute sessions. Rankings also invert between metrics: Logistic~V1 beats SpaceTime~V3 by 9.1 hit-rate points on power-user, yet delivers \textbf{\$46/day less value} (paired CI $[+25, +68]$ in V3's favor). A researcher selecting policies by hit rate would choose backwards.
 
 \textbf{The correct optimization and evaluation target for KV-cache eviction is not hit rate---it is expected cache value.}
+
+\subsection{Findings Replicate on Real Traces}
+\label{sec:realtrace_results}
+
+\begin{table}[t]
+\centering
+\caption{Real-trace results: Azure LLM inference trace (\S\ref{sec:realtrace}; 500MB, ten 6-hour windows as paired replicates; mean with 95\% t-CI; $\Delta\$$ is the paired per-day value delta vs.\ LRU on identical windows).}
+\label{tab:azure}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Policy & Hit\% & \$/Day & $\Delta\$$ vs LRU [CI] \\
+\midrule
+LRU           & 83.9 & 2,465 & --- \\
+Heuristic     & 60.9 & 2,283 & $-183$ $[-231, -135]$ \\
+Logistic V1   & 73.8 & 2,188 & $-277$ $[-322, -233]$ \\
+ValDensity V2 & 49.7 & 2,215 & $-250$ $[-299, -201]$ \\
+ValDens+AC    & 49.5 & 2,214 & $-251$ $[-300, -202]$ \\
+SpaceTime V3  & 54.8 & 2,293 & $-172$ $[-222, -122]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:azure} shows the six policies replayed over the Azure trace windows. Every behavioral finding from the synthetic study replicates on real production arrivals and sizes.
+
+\emph{LRU wins both metrics} (83.9\% hit rate [81.0, 86.8], \$2{,}465/day), and every alternative's paired value deficit is significant---despite the learned policies running zero-shot on a workload they were never trained on.
+
+\emph{The hit-rate/value inversion is stronger than on synthetic workloads.} Logistic~V1 beats SpaceTime~V3 by \textbf{18.9 hit-rate points} (73.8\% vs 54.8\%, paired CI $[17.4, 20.5]$) yet delivers \textbf{\$105/day less value} (paired CI $[+77, +133]$ in V3's favor)---nearly double the \$46/day inversion on the synthetic power-user workload. The real trace's heavy-tailed sizes reward V3's retention of expensive-to-recompute long contexts even as it concedes many cheap hits. Likewise, the heuristic concedes 23 hit-rate points to LRU yet retains 92.6\% of its dollar value.
+
+\emph{The Little's Law correction replicates.} Static value density again collapses (49.7\% hit rate, worst of all policies, with admission control again indistinguishable), and lifetime normalization recovers \textbf{+\$78/day over V2} (paired CI $[+61, +95]$) with +5.1 hit-rate points $[+4.4, +5.9]$.
 
 % ═════════════════════════════════════════════════════════════
 \section{Prototype Validation: TinyLlama}
@@ -349,14 +389,14 @@ Table~\ref{tab:breakeven} and Figure~\ref{fig:breakeven} expose the governing qu
 
 \textbf{Decision Framework.} (1)~Uniform workloads ($\sigma{=}0.5$): LRU dominates---ML overhead is unjustified. (2)~High-variance ($\sigma{=}1.2$): if the deployment metric is dollar value, simple recency heuristics are within noise of LRU and far cheaper than learned policies; evaluate by \$/Day, never hit rate. (3)~Value-aware eviction must be lifetime-normalized (V3), not static (V2)---but neither yet beats LRU.
 
-\textbf{Limitations.} (1)~Synthetic workloads, though persona-calibrated, may miss real user correlations; replaying production traces (e.g., Azure LLM inference traces) is the highest-priority extension. (2)~CPU-only TinyLlama validation omits GPU-specific effects (CUDA fragmentation, PCIe overhead); the break-even model (\S\ref{sec:breakeven}) bounds but does not measure them. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The toy KV geometry preserves relative policy comparisons but not absolute capacity dynamics.
+\textbf{Limitations.} (1)~The real-trace evaluation replays production arrivals and sizes, but session \emph{return behavior} remains modeled: public LLM inference traces carry no conversation identifiers, and we show linkage is not reconstructable from them (\S\ref{sec:realtrace}). Datasets with hashed conversation identifiers (e.g., WildChat, LMSYS-Chat-1M) could close this gap. (2)~CPU-only TinyLlama validation omits GPU-specific effects (CUDA fragmentation, PCIe overhead); the break-even model (\S\ref{sec:breakeven}) bounds but does not measure them. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The toy KV geometry preserves relative policy comparisons but not absolute capacity dynamics.
 
 \textbf{Beating LRU.} V3's remaining gap suggests two directions: hybrid policies that default to recency and deviate only for entries in the extreme value tail, where the quadratic payoff dominates; and admission control at the \emph{cold-to-warm promotion} boundary rather than at eviction time, where the Little's Law penalty does not apply.
 
 % ═════════════════════════════════════════════════════════════
 \section{Conclusion}
 
-We presented a three-tier KV cache persistence system and a statistically rigorous evaluation of six eviction policies across three workloads and ten seeds, validated end-to-end with TinyLlama-1.1B. Our investigation yielded four insights: (1)~under honest evaluation, LRU beats every learned and value-aware policy we tested on both metrics---and our own earlier harness bugs had shown the opposite, a caution for the learned-caching literature; (2)~hit rate and dollar value decouple on heavy-tailed workloads, to the point of inverting policy rankings; (3)~static value-density eviction collapses under Little's Law, and lifetime normalization (space-time density, an LHD adaptation) significantly recovers value; (4)~an analytic break-even model shows tiered persistence is latency-positive almost immediately for large GQA models. Prototype validation demonstrates 48$\times$ CPU TTFT improvement with byte-identical restoration. Beating LRU on value remains open; we believe hybrid recency/value-tail policies are the most promising path.
+We presented a three-tier KV cache persistence system and a statistically rigorous evaluation of six eviction policies across three synthetic workloads, ten seeds, and a replay of the Azure LLM inference production trace, validated end-to-end with TinyLlama-1.1B. Our investigation yielded four insights: (1)~under honest evaluation, LRU beats every learned and value-aware policy we tested on both metrics---and our own earlier harness bugs had shown the opposite, a caution for the learned-caching literature; (2)~hit rate and dollar value decouple on heavy-tailed workloads, to the point of inverting policy rankings---most sharply on the real trace, where the inversion reaches 19 hit-rate points and \$105/day; (3)~static value-density eviction collapses under Little's Law, and lifetime normalization (space-time density, an LHD adaptation) significantly recovers value on synthetic and real workloads alike; (4)~an analytic break-even model shows tiered persistence is latency-positive almost immediately for large GQA models. Prototype validation demonstrates 48$\times$ CPU TTFT improvement with byte-identical restoration. Beating LRU on value remains open; we believe hybrid recency/value-tail policies are the most promising path.
 
 % ═════════════════════════════════════════════════════════════
 \balance

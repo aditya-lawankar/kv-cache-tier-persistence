@@ -47,8 +47,19 @@ policies); **hit rate and value decouple** (heuristic keeps 97.5% of LRU's value
 conceding 12 hit-rate points; V1 beats V3 on hits but loses to it on dollars); and
 **lifetime normalization works** (V3 recovers +$94/day over static V2, CI [+77, +112]).
 
-All numbers regenerate via `make reproduce` — see `benchmarks/experiment_runner.py` and
-`benchmarks/results/experiment_results_v3_aggregate.json`.
+**Real-trace replication** (Azure LLM inference trace, one week of production arrivals,
+ten 6-hour windows as paired replicates): every finding holds. LRU wins both metrics
+(83.9% hit rate, all paired deltas significant), the hit-rate/value inversion is *stronger*
+than on synthetic workloads (Logistic V1 beats Space-Time V3 by 18.9 hit points yet
+delivers $105/day *less* value, CI [+77, +133] in V3's favor), and V3 recovers +$78/day
+over static V2 (CI [+61, +95]). Replays real arrival timestamps and request sizes;
+session return behavior is modeled (the public trace has no conversation identifiers —
+see `benchmarks/azure_trace_loader.py` for the permutation-control evidence). Regenerate
+via `make reproduce-azure` (downloads ~1.1 GB on first use).
+
+All numbers regenerate via `make reproduce` — see `benchmarks/experiment_runner.py`,
+`benchmarks/results/experiment_results_v3_aggregate.json`, and
+`benchmarks/results/experiment_results_azure_aggregate.json`.
 
 ---
 
@@ -193,7 +204,7 @@ if loaded_data:
 
 ## 🧪 Unit Tests
 
-The project includes 47 tests covering serialization round-trips (including CRC32 corruption detection), eviction logic, tier migrations, ML predictor training, the simulated clock, and workload realism properties (monotonic session growth, persona differentiation, reproducibility):
+The project includes 55 tests covering serialization round-trips (including CRC32 corruption detection), eviction logic, tier migrations, ML predictor training, the simulated clock, workload realism properties (monotonic session growth, persona differentiation, reproducibility), and the Azure real-trace loader:
 
 ```bash
 # Run all tests

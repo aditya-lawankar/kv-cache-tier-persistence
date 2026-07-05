@@ -168,6 +168,7 @@ def run_single_experiment(
     duration_days: float = 0.25,
     seed: int = 42,
     predictor: Optional[ResumePredictor] = None,
+    events: Optional[list] = None,
 ) -> ExperimentResult:
     """
     Simulate the cache lifecycle for one (policy, workload, seed) triple.
@@ -175,6 +176,12 @@ def run_single_experiment(
     The trace is replayed on a SimulatedClock advanced to each event's
     timestamp, so time-dependent policies observe realistic session ages,
     idle gaps, and time-of-day — not the wall-clock time of the replay.
+
+    If `events` is given, that preloaded trace (any WorkloadEvent list,
+    e.g. a real-trace window from benchmarks/azure_trace_loader.py) is
+    replayed instead of generating a synthetic one; `profile_name` then
+    only labels the workload column and `duration_days` must equal the
+    trace's span for the per-day scaling to be correct.
 
     For each event in the trace:
       - 'start':  manager.save() — record save latency
@@ -201,9 +208,10 @@ def run_single_experiment(
                 if policy_name == "value_density_ac":
                     manager.eviction_policy.admission_threshold = 0.00015
 
-        # Generate trace
-        sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed)
-        events = sim.generate()
+        # Generate trace (unless a preloaded one was injected)
+        if events is None:
+            sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed)
+            events = sim.generate()
 
         cost_model = CostModel()
 
@@ -493,6 +501,104 @@ def _print_results_table(aggregates: List[AggregateResult]):
 
 
 # ──────────────────────────────────────────────────────────────────
+# Real-trace experiment (Azure LLM inference trace)
+# ──────────────────────────────────────────────────────────────────
+
+def run_azure_experiment(
+    output_dir: str = "benchmarks/results",
+    only_policies: Optional[List[str]] = None,
+) -> Tuple[List[ExperimentResult], List[AggregateResult]]:
+    """
+    Replay ten 6-hour windows of the Azure LLM inference trace
+    (see benchmarks/azure_trace_loader.py for the conversion semantics)
+    through all six policies. Each window is one replicate: all policies
+    replay the identical event list per window, so deltas vs LRU are
+    PAIRED exactly as in the synthetic matrix, with windows playing the
+    role of seeds. Results are written to separate azure_* files so the
+    synthetic canonical results are never clobbered.
+    """
+    from benchmarks.azure_trace_loader import AzureTraceWorkload, WINDOWS, ensure_trace_npz
+
+    os.makedirs(output_dir, exist_ok=True)
+    ensure_trace_npz()
+
+    policies = [
+        ("lru",              False),
+        ("heuristic",        False),
+        ("logistic_v1",      True),
+        ("value_density",    True),
+        ("value_density_ac", True),
+        ("space_time",       True),
+    ]
+    if only_policies:
+        policies = [p for p in policies if p[0] in only_policies]
+
+    logistic_predictor = None
+    if os.path.exists("models/logistic_predictor.pkl"):
+        logistic_predictor = ResumePredictor.load("models/logistic_predictor.pkl")
+        print("  [OK] Loaded logistic predictor from models/logistic_predictor.pkl")
+    else:
+        print("  [--] No trained logistic predictor found -- ML policies will be skipped")
+
+    # Pre-generate every window's trace once; policies share them.
+    window_events = []
+    for w in range(len(WINDOWS)):
+        wl = AzureTraceWorkload(w, seed=1000 + w)
+        window_events.append(wl.generate())
+
+    duration_days = 6.0 / 24.0  # 6-hour windows, same horizon as synthetic
+
+    print("\n" + "=" * 100)
+    print("  REAL-TRACE EXPERIMENT: Azure LLM inference trace (conv, 1 week, 2024)")
+    print("=" * 100)
+    print(f"  Windows: {len(window_events)} x 6h ({', '.join(l for l, _ in WINDOWS)})")
+    print(f"  Capacity: 500 MB total (50 hot + 150 warm + 300 cold)")
+    print(f"  Policies: {', '.join(p[0] for p in policies)}")
+    print("=" * 100 + "\n")
+
+    results: List[ExperimentResult] = []
+    for policy_name, needs_predictor in policies:
+        predictor = logistic_predictor if needs_predictor else None
+        if needs_predictor and predictor is None:
+            print(f"  [SKIP] {policy_name:>18} x azure_conv -- no trained model")
+            continue
+
+        t0 = time.perf_counter()
+        cell_results = []
+        for w, events in enumerate(window_events):
+            cell_results.append(run_single_experiment(
+                policy_name=policy_name,
+                profile_name="azure_conv",
+                duration_days=duration_days,
+                seed=w,
+                predictor=predictor,
+                events=events,
+            ))
+        elapsed = time.perf_counter() - t0
+        results.extend(cell_results)
+
+        mean_hit = float(np.mean([r.hit_rate for r in cell_results]))
+        mean_cost = float(np.mean([r.cost_saved_per_day_usd for r in cell_results]))
+        print(f"  [RUN]  {policy_name:>18} x azure_conv   "
+              f"({len(window_events)} windows, {elapsed:.1f}s) | "
+              f"hit_rate={mean_hit:.2%} | ${mean_cost:,.0f}/day")
+
+    aggregates = aggregate_results(results)
+    _print_results_table(aggregates)
+
+    raw_path = os.path.join(output_dir, "experiment_results_azure_raw.json")
+    with open(raw_path, "w") as f:
+        json.dump([asdict(r) for r in results], f, indent=2)
+    agg_path = os.path.join(output_dir, "experiment_results_azure_aggregate.json")
+    with open(agg_path, "w") as f:
+        json.dump([asdict(a) for a in aggregates], f, indent=2)
+
+    print(f"\nRaw results saved to {raw_path}")
+    print(f"Aggregates saved to {agg_path}")
+    return results, aggregates
+
+
+# ──────────────────────────────────────────────────────────────────
 # Entry point
 # ──────────────────────────────────────────────────────────────────
 
@@ -509,11 +615,20 @@ if __name__ == "__main__":
                         help="Output directory for results")
     parser.add_argument("--policies", type=str, default=None,
                         help="Comma-separated policy filter (e.g. 'space_time')")
+    parser.add_argument("--azure", action="store_true",
+                        help="Replay the Azure LLM inference trace instead of "
+                             "synthetic workloads (downloads ~1.1 GB on first use)")
     args = parser.parse_args()
 
-    run_full_experiment(
-        duration_days=args.duration,
-        seeds=list(range(args.seed_base, args.seed_base + args.seeds)),
-        output_dir=args.output,
-        only_policies=args.policies.split(",") if args.policies else None,
-    )
+    if args.azure:
+        run_azure_experiment(
+            output_dir=args.output,
+            only_policies=args.policies.split(",") if args.policies else None,
+        )
+    else:
+        run_full_experiment(
+            duration_days=args.duration,
+            seeds=list(range(args.seed_base, args.seed_base + args.seeds)),
+            output_dir=args.output,
+            only_policies=args.policies.split(",") if args.policies else None,
+        )
