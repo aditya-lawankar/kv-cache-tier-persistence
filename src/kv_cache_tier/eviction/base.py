@@ -5,12 +5,24 @@ Abstract base class for eviction policies.
 from abc import ABC, abstractmethod
 from typing import Dict, Optional, Any
 
+from ..utils.clock import Clock, SystemClock
+
 # We import CacheEntry lazily or rely on Duck Typing in the methods.
 # For type hinting, we use Any and import at runtime if needed.
 
 class EvictionPolicy(ABC):
-    """Abstract interface for an eviction policy."""
-    
+    """Abstract interface for an eviction policy.
+
+    Policies must read time via self.clock, never time.time()/datetime.now(),
+    so that trace-driven experiments can substitute a SimulatedClock.
+    """
+
+    # Stateless default; replaced per-instance via set_clock().
+    clock: Clock = SystemClock()
+
+    def set_clock(self, clock: Clock) -> None:
+        self.clock = clock
+
     @abstractmethod
     def on_access(self, session_id: str, entry: Any) -> None:
         """Called when a cache entry is accessed/loaded."""

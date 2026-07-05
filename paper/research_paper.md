@@ -1,3 +1,11 @@
+> [!WARNING]
+> **SUPERSEDED DRAFT.** This markdown draft predates the corrected evaluation methodology
+> (virtual-clock replay, persona workloads, tier-discounted paired multi-seed statistics)
+> and its numbers are invalid — notably, the "$68/day learned-policy win over LRU" claim
+> REVERSED under the corrected harness. The canonical, current paper is
+> `paper/latex/paper.tex`; current numbers live in
+> `benchmarks/results/experiment_results_v3_aggregate.json`.
+
 # When Does Value-Density Eviction Help? A Workload-Dependent Analysis of KV Cache Eviction for LLM Serving
 
 ## Abstract

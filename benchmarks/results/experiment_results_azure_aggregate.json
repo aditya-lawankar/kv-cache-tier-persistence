@@ -1,0 +1,176 @@
+[
+  {
+    "policy": "lru",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.8388,
+    "hit_rate_ci95": [
+      0.8096,
+      0.868
+    ],
+    "cost_saved_per_day_mean": 2465.4,
+    "cost_saved_per_day_ci95": [
+      2360.4255,
+      2570.3685
+    ],
+    "hits_by_tier_mean": {
+      "hot": 62.2,
+      "warm": 582.5,
+      "cold": 1310.0
+    },
+    "delta_cost_vs_lru_mean": null,
+    "delta_cost_vs_lru_ci95": null,
+    "delta_hit_rate_vs_lru_mean": null,
+    "delta_hit_rate_vs_lru_ci95": null
+  },
+  {
+    "policy": "heuristic",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.6088,
+    "hit_rate_ci95": [
+      0.5839,
+      0.6338
+    ],
+    "cost_saved_per_day_mean": 2282.75,
+    "cost_saved_per_day_ci95": [
+      2158.6075,
+      2406.8945
+    ],
+    "hits_by_tier_mean": {
+      "hot": 67.7,
+      "warm": 382.1,
+      "cold": 968.6
+    },
+    "delta_cost_vs_lru_mean": -182.65,
+    "delta_cost_vs_lru_ci95": [
+      -230.5017,
+      -134.7903
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.23,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.2443,
+      -0.2156
+    ]
+  },
+  {
+    "policy": "logistic_v1",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.7376,
+    "hit_rate_ci95": [
+      0.7275,
+      0.7477
+    ],
+    "cost_saved_per_day_mean": 2188.19,
+    "cost_saved_per_day_ci95": [
+      2061.3103,
+      2315.0737
+    ],
+    "hits_by_tier_mean": {
+      "hot": 266.9,
+      "warm": 691.6,
+      "cold": 761.0
+    },
+    "delta_cost_vs_lru_mean": -277.21,
+    "delta_cost_vs_lru_ci95": [
+      -321.5571,
+      -232.8529
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.1012,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.1237,
+      -0.0787
+    ]
+  },
+  {
+    "policy": "value_density",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.4967,
+    "hit_rate_ci95": [
+      0.477,
+      0.5165
+    ],
+    "cost_saved_per_day_mean": 2215.1,
+    "cost_saved_per_day_ci95": [
+      2091.5798,
+      2338.6142
+    ],
+    "hits_by_tier_mean": {
+      "hot": 73.2,
+      "warm": 337.1,
+      "cold": 747.9
+    },
+    "delta_cost_vs_lru_mean": -250.3,
+    "delta_cost_vs_lru_ci95": [
+      -299.2598,
+      -201.3402
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.3421,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.3614,
+      -0.3228
+    ]
+  },
+  {
+    "policy": "value_density_ac",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.495,
+    "hit_rate_ci95": [
+      0.4757,
+      0.5143
+    ],
+    "cost_saved_per_day_mean": 2214.27,
+    "cost_saved_per_day_ci95": [
+      2090.6428,
+      2337.9032
+    ],
+    "hits_by_tier_mean": {
+      "hot": 65.6,
+      "warm": 237.8,
+      "cold": 850.8
+    },
+    "delta_cost_vs_lru_mean": -251.12,
+    "delta_cost_vs_lru_ci95": [
+      -300.4677,
+      -201.7803
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.3438,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.3638,
+      -0.3239
+    ]
+  },
+  {
+    "policy": "space_time",
+    "workload": "azure_conv",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.5481,
+    "hit_rate_ci95": [
+      0.528,
+      0.5683
+    ],
+    "cost_saved_per_day_mean": 2293.29,
+    "cost_saved_per_day_ci95": [
+      2163.7927,
+      2422.7933
+    ],
+    "hits_by_tier_mean": {
+      "hot": 95.3,
+      "warm": 443.0,
+      "cold": 740.5
+    },
+    "delta_cost_vs_lru_mean": -172.1,
+    "delta_cost_vs_lru_ci95": [
+      -222.3836,
+      -121.8244
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.2907,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.3073,
+      -0.2741
+    ]
+  }
+]

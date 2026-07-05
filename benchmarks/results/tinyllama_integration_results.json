@@ -1,0 +1,28 @@
+[
+  {
+    "prompt_tokens": 598,
+    "cold_start_ttft_ms": 11804.05,
+    "warm_start_ttft_ms": 6550.21,
+    "speedup_x": 1.8,
+    "ttft_saved_ms": 5253.85,
+    "cache_size_bytes": 13471744,
+    "save_latency_ms": 55.1,
+    "load_latency_ms": 4.27,
+    "semantic_match": true,
+    "cold_output": "The single most important insight about KV cache eviction is that it should prioritize keeping expensive-to-recompute sessions. This is because",
+    "warm_output": "The single most important insight about KV cache eviction is that it should prioritize keeping expensive-to-recompute sessions. This is because"
+  },
+  {
+    "prompt_tokens": 598,
+    "cold_start_ttft_ms": 11449.24,
+    "warm_start_ttft_ms": 6756.5,
+    "speedup_x": 1.69,
+    "ttft_saved_ms": 4692.74,
+    "cache_size_bytes": 13471744,
+    "save_latency_ms": 56.84,
+    "load_latency_ms": 5.21,
+    "semantic_match": true,
+    "cold_output": "The single most important insight about KV cache eviction is that it should prioritize keeping expensive-to-recompute sessions. This is because",
+    "warm_output": "The single most important insight about KV cache eviction is that it should prioritize keeping expensive-to-recompute sessions. This is because"
+  }
+]

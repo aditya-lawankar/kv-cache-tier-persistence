@@ -1,5 +1,4 @@
 data/
-benchmarks/results/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -8,3 +7,26 @@ htmlcov/
 .env
 .DS_Store
 *.swp
+
+# Experiment outputs are regenerable (make reproduce); keep only the
+# canonical result files the paper is built from.
+benchmarks/results/*
+!benchmarks/results/experiment_results_v3_raw.json
+!benchmarks/results/experiment_results_v3_aggregate.json
+!benchmarks/results/experiment_results_azure_raw.json
+!benchmarks/results/experiment_results_azure_aggregate.json
+!benchmarks/results/tinyllama_integration_results.json
+
+# LaTeX build artifacts (paper.pdf at repo root is committed deliberately)
+paper/latex/*.aux
+paper/latex/*.bbl
+paper/latex/*.blg
+paper/latex/*.log
+paper/latex/*.out
+paper/latex/paper.pdf
+
+# Private working notes — not part of the public artifact
+PROJECT_REVIEW.md
+fable_review_context.md
+arxiv_submission.zip
+arxiv_bundle.zip

@@ -11,15 +11,66 @@
 
 ---
 
-## 🔬 Research Question & Hypotheses
+## 🔬 Research Question & Findings
 
 **Primary Research Question:**  
-*Can a learned eviction policy applied to a three-tier KV cache hierarchy significantly reduce LLM cold-start latency compared to LRU and TTL under realistic multi-session workloads?*
+*Can a learned eviction policy applied to a three-tier KV cache hierarchy significantly reduce LLM cold-start cost compared to LRU and TTL under realistic multi-session workloads?*
 
-**Hypotheses:**
-1. **H1:** Predictive eviction achieves ≥20% higher cache hit rate than standard LRU under enterprise workloads.
-2. **H2:** Tier promotion from NVMe (Warm Tier) reduces cold-start latency by ≥60% vs. full token recomputation.
-3. **H3:** Zstd compression enables a 3x increase in effective warm-tier capacity with <5ms operational overhead per session.
+We began with the hypothesis that predictive eviction would beat LRU on **hit rate**. The data
+falsified that hypothesis — and the diagnosis of *why* became the project's actual contribution:
+
+1. **Binary classification eviction loses to LRU under capacity pressure.** Eviction is a
+   Knapsack-style packing problem; predicting P(resume) while ignoring entry size retains
+   large sessions that choke out dozens of small ones.
+2. **Static value-density (Value/Byte) eviction fails even harder on heavy-tailed workloads.**
+   A cache is a dynamic system governed by Little's Law: maximizing value per byte without
+   bounding sojourn time collapses cache cardinality.
+3. **Hit rate is the wrong metric for KV caching.** With O(N²) prefill recompute costs, a
+   policy with a *lower* hit rate can deliver *higher* GPU savings by retaining
+   expensive-to-recompute long-context sessions. The correct objective is **expected cache
+   value**, and hits must be discounted by the restore cost of the tier they come from.
+
+**Headline results** (500MB tiered cache, 6h simulated, 10 seeds, paired 95% CIs vs LRU
+on identical traces):
+
+| Policy | Enterprise hit% | Δ$/day vs LRU [CI] | Power-user hit% | Δ$/day vs LRU [CI] |
+|---|---|---|---|---|
+| LRU | **79.2** | — | **96.0** | — |
+| Heuristic | 55.3 | −255 [−312, −199] | 84.2 | **−41 [−60, −22]** |
+| Logistic V1 | 67.9 | −230 [−323, −138] | 83.9 | −214 [−276, −152] |
+| Value Density V2 | 47.9 | −257 [−348, −167] | 71.9 | −202 [−252, −152] |
+| Space-Time V3 | 51.2 | **−163 [−249, −77]** | 74.8 | **−168 [−215, −120]** |
+
+Three takeaways: **LRU wins everything under honest evaluation** (an earlier buggy harness
+showed the learned policy beating LRU — evaluation bugs preferentially flatter complex
+policies); **hit rate and value decouple** (heuristic keeps 97.5% of LRU's value while
+conceding 12 hit-rate points; V1 beats V3 on hits but loses to it on dollars); and
+**lifetime normalization works** (V3 recovers +$94/day over static V2, CI [+77, +112]).
+
+**Real-trace replication** (Azure LLM inference trace, one week of production arrivals,
+ten 6-hour windows as paired replicates): every finding holds. LRU wins both metrics
+(83.9% hit rate, all paired deltas significant), the hit-rate/value inversion is *stronger*
+than on synthetic workloads (Logistic V1 beats Space-Time V3 by 18.9 hit points yet
+delivers $105/day *less* value, CI [+77, +133] in V3's favor), and V3 recovers +$78/day
+over static V2 (CI [+61, +95]). Replays real arrival timestamps and request sizes;
+session return behavior is modeled (the public trace has no conversation identifiers —
+see `benchmarks/azure_trace_loader.py` for the permutation-control evidence). Regenerate
+via `make reproduce-azure` (downloads ~1.1 GB on first use).
+
+All numbers regenerate via `make reproduce` — see `benchmarks/experiment_runner.py`,
+`benchmarks/results/experiment_results_v3_aggregate.json`, and
+`benchmarks/results/experiment_results_azure_aggregate.json`.
+
+---
+
+## 📄 Research Paper
+
+**[Hit Rate Is Not Value: A Rigorous Evaluation of Learned and Value-Aware Eviction for
+Tiered LLM KV-Cache Persistence](paper.pdf)** — 7-page USENIX-style paper covering the
+system design, the V1→V2→V3 eviction-policy progression, the statistical methodology,
+the break-even analysis, and the TinyLlama end-to-end validation. LaTeX sources in
+[`paper/latex/`](paper/latex/); every number and figure regenerates from the committed
+result JSONs (`make reproduce`).
 
 ---
 
@@ -64,7 +115,7 @@ flowchart TD
 
     subgraph TieredCacheManager
         E["Learned Eviction Policy<br/>Predictive Model"]
-        S["Serializer + Compressor<br/>safetensors / LZ4"]
+        S["Serializer + Compressor<br/>Raw Binary (CRC32) / Zstd"]
 
         H[("Hot Tier<br/>GPU VRAM")]
         W[("Warm Tier<br/>NVMe SSD")]
@@ -86,13 +137,26 @@ flowchart TD
     W -->|"Found & Promote"| H
 ```
 
-## 🧠 Predictive Eviction (Core Contribution)
+## 🧠 The Eviction Policy Progression (V1 → V2 → V3)
 
 Traditional systems use LRU (Least Recently Used) for cache eviction. However, LLM user patterns are highly predictable. A user debugging code (Enterprise) has vastly different return patterns than someone generating a quick recipe (Casual).
 
-This project treats cache retention as a **binary classification problem** — predicting the probability that a given session will resume within a configurable time window. 
+The project evaluates a progression of eviction policies:
 
-Features engineered for the model:
+- **V1 (Logistic/GBT):** treats retention as **binary classification** — predict
+  P(resume) within a time window, evict the least likely. *Fails under capacity
+  pressure*: classification ignores entry size (the Knapsack mismatch).
+- **V2 (Value Density):** maximizes expected GPU savings per cached byte,
+  P(resume) × RecomputeCost(N) / Size(N), with an optional admission-control gate.
+  *Fails on heavy-tailed workloads*: static packing ignores sojourn time
+  (the Little's Law collapse).
+- **V3 (Space-Time Density):** divides value density by expected sojourn
+  time E[Δt] (estimated from an EMA of observed inter-access gaps), charging
+  each entry for the space-time volume it occupies — an LHD-style objective
+  adapted to quadratic recompute costs. Implemented in
+  `src/kv_cache_tier/eviction/space_time.py`.
+
+Features engineered for the P(resume) models:
 - `session_age_minutes`: How long since the session was created
 - `token_count`: Conversation length (proxy for context value)
 - `revisit_count`: Number of times the user resumed this session
@@ -107,7 +171,7 @@ Drawing from enterprise storage design constraints where cost-per-GB is a first-
 
 ### Installation
 ```bash
-git clone https://github.com/yourusername/kv-cache-tier-persistence.git
+git clone https://github.com/aditya-lawankar/kv-cache-tier-persistence.git
 cd kv-cache-tier-persistence
 pip install -e ".[dev]"
 ```
@@ -140,7 +204,7 @@ if loaded_data:
 
 ## 🧪 Unit Tests
 
-The project includes 26 tests covering serialization round-trips, eviction logic, tier migrations, ML predictor training, and edge cases:
+The project includes 55 tests covering serialization round-trips (including CRC32 corruption detection), eviction logic, tier migrations, ML predictor training, the simulated clock, workload realism properties (monotonic session growth, persona differentiation, reproducibility), and the Azure real-trace loader:
 
 ```bash
 # Run all tests
@@ -171,10 +235,16 @@ Expected output:
 ======================================================================
   Model                 Train Acc   Test Acc  Train AUC   Test AUC
   -------------------- ---------- ---------- ---------- ----------
-  Logistic Reg.            0.6024     0.6045     0.5565     0.5580
-  Gradient Boosted         0.6162     0.6131     0.5803     0.5645
+  Logistic Reg.            0.6425     0.6442     0.7017     0.7022
+  Gradient Boosted         0.6727     0.6729     0.7333     0.7300
 ======================================================================
 ```
+
+The workload simulator assigns each user a persistent *persona* (return
+propensity, verbosity, diurnal activity window), so per-user features such
+as `user_historical_return_rate` carry learnable signal — with an i.i.d.
+user pool those features are noise by construction and AUC saturates near
+0.56 (coin-flip).
 
 ## 📊 Benchmarks & Realistic Workloads
 
@@ -190,6 +260,54 @@ python -m benchmarks.run_benchmarks --suite all
 ```
 
 *(Charts and structured empirical results are saved to `benchmarks/results/`)*
+
+### Running the synthetic experiment matrix
+
+Regenerates every number in the paper's main results table (6 policies × 3 workloads × 10 seeds):
+
+```bash
+make reproduce
+# or, step by step:
+python src/kv_cache_tier/eviction/train_predictors.py   # only if models/*.pkl are missing
+python benchmarks/experiment_runner.py --duration 0.25 --seeds 10
+python benchmarks/generate_figures.py
+```
+
+### Running the real-trace evaluation (Azure LLM inference)
+
+Replays ten 6-hour windows of the one-week Azure LLM inference trace
+([AzurePublicDataset](https://github.com/Azure/AzurePublicDataset), 27.3M production requests)
+through all six policies. See `benchmarks/azure_trace_loader.py` for the conversion
+semantics: real arrival timestamps and request sizes, modeled return behavior.
+
+```bash
+make reproduce-azure
+# equivalently:
+python benchmarks/experiment_runner.py --azure
+```
+
+The first run downloads the trace (~1.1 GB) into `data/` and parses it once into a
+compressed cache (~1 minute); both are gitignored and reused afterwards. The full run
+takes ~5 hours serially. To finish in under an hour, shard by policy across parallel
+processes and merge:
+
+```bash
+for p in lru heuristic logistic_v1 value_density value_density_ac space_time; do
+  python benchmarks/experiment_runner.py --azure --policies $p \
+    --output benchmarks/results/azure_shards/$p &
+done
+wait
+python benchmarks/merge_results.py --prefix azure \
+  benchmarks/results/azure_shards/*/experiment_results_azure_raw.json
+```
+
+Either path prints the paired results table and writes the canonical
+`benchmarks/results/experiment_results_azure_{raw,aggregate}.json`. To inspect a single
+window's converted workload without running experiments:
+
+```bash
+python benchmarks/azure_trace_loader.py --window 3
+```
 
 ## 📁 Project Structure
 
@@ -207,7 +325,7 @@ kv-cache-tier-persistence/
 │   └── utils/          # Cost modeling, Observability (Prometheus)
 ├── benchmarks/         # Workload simulation & benchmark execution
 ├── models/             # Trained ML model artifacts (.pkl)
-├── tests/              # 26 Pytest tests
+├── tests/              # 55 Pytest tests
 ├── grafana_dashboard.json  # Prometheus dashboard
 └── docs/               # Architecture documents
 ```

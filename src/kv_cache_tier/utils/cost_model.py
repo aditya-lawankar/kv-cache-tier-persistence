@@ -12,11 +12,42 @@ class CostModel:
     tokens_per_second_cold_start: int = 15  # Prefill speed (slow for large contexts)
     attention_quadratic_factor: float = 5e-5 # O(N^2) attention overhead factor
 
+    # Modeled tier restore characteristics: base latency + size/bandwidth.
+    # A hit is only worth (recompute_cost - restore_cost); a cold-tier hit
+    # that needs decompression + object-store fetch is NOT worth the same
+    # as a hot-tier hit, and must not be credited as if it were.
+    hot_restore_latency_s: float = 0.0001       # VRAM-resident, effectively free
+    warm_restore_latency_s: float = 0.010       # NVMe access latency
+    warm_bandwidth_bytes_s: float = 2e9         # ~2 GB/s NVMe read
+    cold_restore_latency_s: float = 0.100       # object storage first-byte latency
+    cold_bandwidth_bytes_s: float = 500e6       # ~500 MB/s incl. decompression
+
     def compute_recompute_time(self, token_count: int) -> float:
         """Calculate time to process token_count WITHOUT cache (full recompute). Includes O(N^2) attention."""
         linear_time = token_count / self.tokens_per_second_cold_start
         quadratic_time = self.attention_quadratic_factor * (token_count ** 2)
         return linear_time + quadratic_time
+
+    def restore_time_seconds(self, tier: str, size_bytes: int) -> float:
+        """Modeled time to restore a cached entry from the given tier."""
+        if tier == "hot":
+            return self.hot_restore_latency_s
+        if tier == "warm":
+            return self.warm_restore_latency_s + size_bytes / self.warm_bandwidth_bytes_s
+        if tier == "cold":
+            return self.cold_restore_latency_s + size_bytes / self.cold_bandwidth_bytes_s
+        raise ValueError(f"Unknown tier: {tier}")
+
+    def savings_per_hit_seconds(self, cached_token_count: int, tier: str, size_bytes: int) -> float:
+        """
+        GPU seconds saved by one cache hit: the avoided prefill recompute of
+        the CACHED context, minus the modeled cost of restoring it from the
+        tier where it was found. Floored at zero — a hit is never charged
+        as a loss, it just may be worthless.
+        """
+        saved = self.compute_recompute_time(cached_token_count)
+        saved -= self.restore_time_seconds(tier, size_bytes)
+        return max(saved, 0.0)
 
     def compute_savings(self, cache_hit_rate: float,
                        sessions_per_hour: int,

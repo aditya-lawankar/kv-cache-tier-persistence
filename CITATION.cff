@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software or build on its results, please cite it as below."
+title: "KV Cache Tier Persistence: Value-Aware Eviction for Tiered LLM KV Cache Storage"
+type: software
+authors:
+  - family-names: Lawankar
+    given-names: Aditya
+    email: lawankaraditya@gmail.com
+repository-code: "https://github.com/aditya-lawankar/kv-cache-tier-persistence"
+license: MIT
+keywords:
+  - LLM inference
+  - KV cache
+  - cache eviction
+  - tiered storage
+  - machine learning for systems

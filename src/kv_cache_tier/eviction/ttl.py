@@ -2,7 +2,6 @@
 Time-To-Live (TTL) eviction policy.
 """
 
-import time
 from typing import Dict, Optional, Any
 
 from .lru import LRUEvictionPolicy
@@ -29,7 +28,7 @@ class TTLEvictionPolicy(LRUEvictionPolicy):
         
     def should_evict(self, session_id: str, entry: Any) -> bool:
         """Check if an entry has expired based on its tier's TTL."""
-        now = time.time()
+        now = self.clock.now()
         ttl = self.ttl_seconds.get(entry.tier, 3600)
         
         # 0 means never expire
@@ -45,8 +44,8 @@ class TTLEvictionPolicy(LRUEvictionPolicy):
         """
         if not entries:
             return None
-            
-        now = time.time()
+
+        now = self.clock.now()
         
         # 1. Look for oldest expired entry
         oldest_expired = None
