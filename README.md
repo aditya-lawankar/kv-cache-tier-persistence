@@ -261,6 +261,54 @@ python -m benchmarks.run_benchmarks --suite all
 
 *(Charts and structured empirical results are saved to `benchmarks/results/`)*
 
+### Running the synthetic experiment matrix
+
+Regenerates every number in the paper's main results table (6 policies × 3 workloads × 10 seeds):
+
+```bash
+make reproduce
+# or, step by step:
+python src/kv_cache_tier/eviction/train_predictors.py   # only if models/*.pkl are missing
+python benchmarks/experiment_runner.py --duration 0.25 --seeds 10
+python benchmarks/generate_figures.py
+```
+
+### Running the real-trace evaluation (Azure LLM inference)
+
+Replays ten 6-hour windows of the one-week Azure LLM inference trace
+([AzurePublicDataset](https://github.com/Azure/AzurePublicDataset), 27.3M production requests)
+through all six policies. See `benchmarks/azure_trace_loader.py` for the conversion
+semantics: real arrival timestamps and request sizes, modeled return behavior.
+
+```bash
+make reproduce-azure
+# equivalently:
+python benchmarks/experiment_runner.py --azure
+```
+
+The first run downloads the trace (~1.1 GB) into `data/` and parses it once into a
+compressed cache (~1 minute); both are gitignored and reused afterwards. The full run
+takes ~5 hours serially. To finish in under an hour, shard by policy across parallel
+processes and merge:
+
+```bash
+for p in lru heuristic logistic_v1 value_density value_density_ac space_time; do
+  python benchmarks/experiment_runner.py --azure --policies $p \
+    --output benchmarks/results/azure_shards/$p &
+done
+wait
+python benchmarks/merge_results.py --prefix azure \
+  benchmarks/results/azure_shards/*/experiment_results_azure_raw.json
+```
+
+Either path prints the paired results table and writes the canonical
+`benchmarks/results/experiment_results_azure_{raw,aggregate}.json`. To inspect a single
+window's converted workload without running experiments:
+
+```bash
+python benchmarks/azure_trace_loader.py --window 3
+```
+
 ## 📁 Project Structure
 
 ```
@@ -277,7 +325,7 @@ kv-cache-tier-persistence/
 │   └── utils/          # Cost modeling, Observability (Prometheus)
 ├── benchmarks/         # Workload simulation & benchmark execution
 ├── models/             # Trained ML model artifacts (.pkl)
-├── tests/              # 47 Pytest tests
+├── tests/              # 55 Pytest tests
 ├── grafana_dashboard.json  # Prometheus dashboard
 └── docs/               # Architecture documents
 ```
