@@ -17,6 +17,7 @@ benchmarks/results/*
 !benchmarks/results/experiment_results_azure_aggregate.json
 !benchmarks/results/tinyllama_integration_results.json
 !benchmarks/results/tinyllama_gpu_results.json
+!benchmarks/results/tinyllama_gpu_sweep.json
 
 # LaTeX build artifacts (paper.pdf at repo root is committed deliberately)
 paper/latex/*.aux
@@ -28,6 +29,7 @@ paper/latex/paper.pdf
 
 # Private working notes — not part of the public artifact
 PROJECT_REVIEW.md
+PROJECT_BRIEFING.md
 fable_review_context.md
 arxiv_submission.zip
 arxiv_bundle.zip

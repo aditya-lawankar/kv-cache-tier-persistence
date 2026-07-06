@@ -66,10 +66,12 @@ class IntegrationResult:
     save_latency_ms: float         # time to save cache to tier system
     load_latency_ms: float         # time to load cache from tier system (bytes -> numpy)
     restore_to_device_ms: float    # numpy -> torch tensors + host-to-device copy
-    semantic_match: bool           # whether restored generation matches
+    semantic_match: bool           # whether restored generation matches cold
     cold_output: str               # text generated without cache
     warm_output: str               # text generated with cache
     device: str = "cpu"            # cpu | cuda (hardware the trial ran on)
+    control_matches_restored: bool = True  # in-memory resume == restored resume
+    control_matches_cold: bool = True      # in-memory resume == cold generate()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -357,51 +359,60 @@ def run_single_trial(
     restore_to_device_ms = (time.perf_counter() - t0) * 1000
 
     # ── Step 5: Warm start (generate with restored cache) ──
-    print(f"    [5/5] Warm-start generation...", end="", flush=True)
+    print(f"    [5/6] Warm-start generation...", end="", flush=True)
 
-    # Manual autoregressive generation with restored KV cache.
-    # This avoids transformers' generate() cache_position issues and
-    # gives us precise TTFT measurement for the first forward pass.
-    next_token = input_ids[:, -1:]  # Start from last prompt token
-    generated_ids = []
-    warm_past_kv = restored_past_kv
-    cache_seq_len = prompt_tokens - 1  # Cache covers tokens 0..N-2
+    def manual_generate(past):
+        """Manual autoregressive generation from a KV cache.
 
-    _sync_if_cuda(device)
-    t0 = time.perf_counter()
-    with torch.no_grad():
-        for step in range(max_new_tokens):
-            # Build cache_position for current token
-            pos = torch.tensor([[cache_seq_len + step]], dtype=torch.long, device=device)
+        Avoids transformers' generate() cache_position issues with external
+        caches and gives a precise first-token measurement. Returns
+        (text, ttft_ms, e2e_ms)."""
+        next_token = input_ids[:, -1:]  # Start from last prompt token
+        generated_ids = []
+        cache_seq_len = prompt_tokens - 1  # Cache covers tokens 0..N-2
+        ttft = 0.0
 
-            outputs = model(
-                input_ids=next_token,
-                past_key_values=warm_past_kv,
-                cache_position=pos.squeeze(0),
-                use_cache=True,
-            )
+        _sync_if_cuda(device)
+        t_start = time.perf_counter()
+        with torch.no_grad():
+            for step in range(max_new_tokens):
+                pos = torch.tensor([cache_seq_len + step], dtype=torch.long, device=device)
+                outputs = model(
+                    input_ids=next_token,
+                    past_key_values=past,
+                    cache_position=pos,
+                    use_cache=True,
+                )
+                if step == 0:
+                    _sync_if_cuda(device)
+                    ttft = (time.perf_counter() - t_start) * 1000
+                past = outputs.past_key_values
+                next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+                generated_ids.append(next_token.item())
+                if next_token.item() == tokenizer.eos_token_id:
+                    break
+        _sync_if_cuda(device)
+        e2e = (time.perf_counter() - t_start) * 1000
+        return tokenizer.decode(generated_ids, skip_special_tokens=True), ttft, e2e
 
-            if step == 0:
-                _sync_if_cuda(device)
-                warm_ttft = (time.perf_counter() - t0) * 1000  # First token latency
-
-            warm_past_kv = outputs.past_key_values
-            next_token_logits = outputs.logits[:, -1, :]
-            next_token = next_token_logits.argmax(dim=-1, keepdim=True)
-            generated_ids.append(next_token.item())
-
-            # Stop on EOS
-            if next_token.item() == tokenizer.eos_token_id:
-                break
-
-    _sync_if_cuda(device)
-    warm_e2e_ms = (time.perf_counter() - t0) * 1000  # decode steps only
+    warm_text, warm_ttft, warm_e2e_ms = manual_generate(restored_past_kv)
     print(f" done ({warm_e2e_ms:.0f}ms e2e, TTFT={warm_ttft:.0f}ms)")
 
-    warm_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+    # ── Step 6: In-memory control ──
+    # Same incremental generation seeded with the ORIGINAL in-memory cache
+    # (no serialize/store/restore). Isolates the cause of any divergence:
+    #   control == restored  -> divergence (if any) comes from the batched-
+    #                           prefill vs incremental-decode kernel paths,
+    #                           inherent to ANY cache-resume scheme
+    #   control == cold      -> divergence was introduced by storage
+    print(f"    [6/6] In-memory control...", end="", flush=True)
+    control_text, _, _ = manual_generate(past_kv)
+    print(" done")
 
     # ── Compare outputs ──
     semantic_match = cold_text.strip() == warm_text.strip()
+    control_matches_restored = control_text.strip() == warm_text.strip()
+    control_matches_cold = control_text.strip() == cold_text.strip()
     # A warm first token pays: tier load + tensor restore + one forward pass.
     warm_first_token_path_ms = load_latency + restore_to_device_ms + warm_ttft
     ttft_speedup = cold_ttft_ms / max(warm_first_token_path_ms, 0.01)
@@ -423,6 +434,8 @@ def run_single_trial(
         cold_output=cold_text[:200],
         warm_output=warm_text[:200],
         device=device.type,
+        control_matches_restored=control_matches_restored,
+        control_matches_cold=control_matches_cold,
     )
 
 

@@ -309,24 +309,85 @@ window's converted workload without running experiments:
 python benchmarks/azure_trace_loader.py --window 3
 ```
 
+### Validating on a real model (TinyLlama-1.1B, CPU)
+
+**Why:** the eviction study runs on simulated caches; this proves the persistence layer
+works end-to-end on a real transformer — extract a KV cache from HuggingFace, round-trip
+it through the tier system, resume generation, and verify the output is unchanged.
+
+```bash
+python benchmarks/tinyllama_integration.py --max-tokens 598 --trials 2
+```
+
+Downloads TinyLlama-1.1B (~2.2 GB) on first run; ~10 minutes on CPU. Reports, per trial:
+
+- **Cold TTFT** — a timed *prefill-only* forward pass (the cost a cache hit avoids), and
+  **warm TTFT** — tier load + tensor restore + one forward pass. These are reported
+  separately from **end-to-end** times: comparing a cold prefill+decode total against a
+  warm first-token latency inflates the apparent speedup ~2.5× (a mistake this benchmark
+  originally made, now guarded against by construction).
+- **Output equality** against the cold path, plus an **in-memory control** (resume from
+  the never-serialized cache) that attributes any divergence to either the storage
+  round-trip or the batched-prefill vs incremental-decode kernel paths.
+
+### GPU validation (Colab, free T4)
+
+**Why:** on CPU, prefill is so slow that persistence always wins; the honest question is
+where restoration beats recomputation on real inference hardware. This produces the
+measured points that test the break-even model's crossover prediction (N* ≈ 1,561 tokens
+for TinyLlama).
+
+1. Open [`benchmarks/gpu_validation.ipynb` in Colab](https://colab.research.google.com/github/aditya-lawankar/kv-cache-tier-persistence/blob/main/benchmarks/gpu_validation.ipynb)
+2. `Runtime` → `Change runtime type` → **T4 GPU** → Save
+3. `Runtime` → `Run all` (~15 min). Every cell asserts its own success; the last cell
+   downloads `tinyllama_gpu_results.json` — commit it to `benchmarks/results/`.
+
+Measured result (T4): TTFT speedup 0.62× at 168 tokens → 0.72× at 440 → **1.11× at
+1,792**, bracketing the predicted crossover.
+
+### Break-even analysis (no hardware needed)
+
+**Why:** restoring a cache moves O(N) bytes while prefill costs O(N²) compute, so for
+every (model, GPU, storage tier) there is a context length N* beyond which persistence
+always wins on latency. This derives N* analytically and generates Figure 4:
+
+```bash
+python benchmarks/breakeven_analysis.py
+```
+
+### Building the paper
+
+```bash
+make arxiv          # compile + package LaTeX sources into arxiv_bundle.zip
+# or manually:
+cd paper/latex && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+```
+
+Every number and figure in the paper regenerates from the committed result JSONs —
+if a claim in the paper cannot be traced to `benchmarks/results/*.json`, that is a bug.
+
 ## 📁 Project Structure
 
 ```
 kv-cache-tier-persistence/
 ├── src/kv_cache_tier/
 │   ├── core/           # Tier orchestrator, cache blocks
-│   ├── eviction/       # ML Predictive, LRU, TTL policies
-│   │   ├── features.py         # SessionFeatures dataclass
+│   ├── eviction/       # Eviction policies
+│   │   ├── lru.py / ttl.py     # Baselines
+│   │   ├── predictive.py       # V1: heuristic + learned P(resume)
+│   │   ├── value_density.py    # V2: value per byte (+ admission control)
+│   │   ├── space_time.py       # V3: value per byte-second (LHD-style)
+│   │   ├── features.py         # SessionFeatures + shared FeatureExtractor
 │   │   ├── predictors.py       # LogisticPredictor, GBTPredictor
-│   │   ├── predictive.py       # PredictiveEvictionPolicy (heuristic/ML)
 │   │   └── train_predictors.py # Training pipeline
-│   ├── serialization/  # safetensors, raw binary, LZ4, Zstd
+│   ├── serialization/  # Raw binary (CRC32), safetensors, LZ4, Zstd
 │   ├── tiers/          # Hot, Warm, Cold tier implementations
-│   └── utils/          # Cost modeling, Observability (Prometheus)
-├── benchmarks/         # Workload simulation & benchmark execution
+│   └── utils/          # Clock (simulated time), cost model, metrics
+├── benchmarks/         # Simulator, experiment runner, Azure loader,
+│                       # break-even analysis, TinyLlama + GPU validation
 ├── models/             # Trained ML model artifacts (.pkl)
 ├── tests/              # 55 Pytest tests
-├── grafana_dashboard.json  # Prometheus dashboard
+├── paper/              # LaTeX sources + figures (paper.pdf at repo root)
 └── docs/               # Architecture documents
 ```
 
