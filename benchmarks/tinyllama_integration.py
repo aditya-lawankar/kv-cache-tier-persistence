@@ -62,6 +62,7 @@ class IntegrationResult:
     semantic_match: bool           # whether restored generation matches
     cold_output: str               # text generated without cache
     warm_output: str               # text generated with cache
+    device: str = "cpu"            # cpu | cuda (hardware the trial ran on)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -130,18 +131,31 @@ def numpy_to_hf_kv(
 # Core integration logic
 # ──────────────────────────────────────────────────────────────────
 
+def _sync_if_cuda(device: torch.device) -> None:
+    """CUDA kernels launch asynchronously; timing without a synchronize
+    measures launch overhead, not execution. No-op on CPU."""
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+
 def load_model(model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"):
-    """Load TinyLlama model and tokenizer."""
+    """Load TinyLlama model and tokenizer on the best available device."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+
     print(f"  Loading model: {model_name}")
-    print(f"  Device: CPU (no CUDA available)")
+    if device == "cuda":
+        print(f"  Device: {torch.cuda.get_device_name(0)} (CUDA, FP16)")
+    else:
+        print(f"  Device: CPU (FP32)")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float32,  # CPU requires float32
-        device_map="cpu",
+        torch_dtype=dtype,
+        device_map=device,
     )
     model.eval()
 
@@ -258,6 +272,7 @@ def run_single_trial(
 
     # ── Step 1: Cold start (full prefill + generation) ──
     print(f"    [1/5] Cold-start prefill...", end="", flush=True)
+    _sync_if_cuda(device)
     t0 = time.perf_counter()
     with torch.no_grad():
         cold_output = model.generate(
@@ -267,6 +282,7 @@ def run_single_trial(
             return_dict_in_generate=True,
             output_hidden_states=False,
         )
+    _sync_if_cuda(device)
     cold_ttft_total = (time.perf_counter() - t0) * 1000  # ms
 
     cold_text = tokenizer.decode(
@@ -322,6 +338,7 @@ def run_single_trial(
     warm_past_kv = restored_past_kv
     cache_seq_len = prompt_tokens - 1  # Cache covers tokens 0..N-2
 
+    _sync_if_cuda(device)
     t0 = time.perf_counter()
     with torch.no_grad():
         for step in range(max_new_tokens):
@@ -336,6 +353,7 @@ def run_single_trial(
             )
 
             if step == 0:
+                _sync_if_cuda(device)
                 warm_ttft = (time.perf_counter() - t0) * 1000  # First token latency
 
             warm_past_kv = outputs.past_key_values
@@ -347,6 +365,7 @@ def run_single_trial(
             if next_token.item() == tokenizer.eos_token_id:
                 break
 
+    _sync_if_cuda(device)
     warm_ttft_total = (time.perf_counter() - t0) * 1000  # Total generation time
     print(f" done ({warm_ttft_total:.0f}ms, TTFT={warm_ttft:.0f}ms)")
 
@@ -369,6 +388,7 @@ def run_single_trial(
         semantic_match=semantic_match,
         cold_output=cold_text[:200],
         warm_output=warm_text[:200],
+        device=device.type,
     )
 
 
