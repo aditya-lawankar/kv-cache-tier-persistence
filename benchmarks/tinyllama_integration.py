@@ -50,15 +50,22 @@ from src.kv_cache_tier.core.tiered_manager import TieredCacheManager
 
 @dataclass
 class IntegrationResult:
-    """Result of a single cache-restore trial."""
+    """Result of a single cache-restore trial.
+
+    TTFT and end-to-end are recorded SEPARATELY: comparing a cold total
+    (prefill + decode) against a warm first-token latency inflates the
+    speedup by the shared decode time and must never be reported."""
     prompt_tokens: int
-    cold_start_ttft_ms: float      # TTFT without cache (full prefill)
-    warm_start_ttft_ms: float      # TTFT with cache restored
-    speedup_x: float               # cold / warm
-    ttft_saved_ms: float           # cold - warm
+    cold_ttft_ms: float            # prefill-only forward pass (true cold first-token cost)
+    warm_ttft_ms: float            # first token generated from the restored cache
+    cold_e2e_ms: float             # full cold generate(): prefill + all decode steps
+    warm_e2e_ms: float             # full warm generation: decode steps only
+    ttft_speedup_x: float          # cold_ttft / (warm_ttft + restore path)
+    e2e_speedup_x: float           # cold_e2e / warm_e2e
     cache_size_bytes: int          # size of serialized KV cache
     save_latency_ms: float         # time to save cache to tier system
-    load_latency_ms: float         # time to load cache from tier system
+    load_latency_ms: float         # time to load cache from tier system (bytes -> numpy)
+    restore_to_device_ms: float    # numpy -> torch tensors + host-to-device copy
     semantic_match: bool           # whether restored generation matches
     cold_output: str               # text generated without cache
     warm_output: str               # text generated with cache
@@ -221,30 +228,41 @@ def build_long_prompt(tokenizer, target_tokens: int = 512) -> str:
          "is expected cache value, not hit rate."),
     ]
 
-    # Build chat messages
+    final_question = {
+        "role": "user",
+        "content": "Given everything we discussed, what is the single most important "
+                   "insight about KV cache eviction?",
+    }
+
+    def templated_length(msgs) -> int:
+        text = tokenizer.apply_chat_template(
+            msgs + [final_question], tokenize=False, add_generation_prompt=True
+        )
+        return len(tokenizer.encode(text))
+
+    # Grow the conversation ONE turn pair at a time and stop BEFORE exceeding
+    # the target. Token-level truncation is not an option: cutting mid-sentence
+    # leaves the model on flat next-token distributions where storage-dtype
+    # rounding can flip the argmax, and overshooting whole blocks can exceed
+    # the model's context window (out-of-distribution positions -> garbage).
     messages = []
-    for user_msg, assistant_msg in turns:
-        messages.append({"role": "user", "content": user_msg})
-        messages.append({"role": "assistant", "content": assistant_msg})
+    pair_idx = 0
+    while pair_idx < 200:
+        user_msg, assistant_msg = turns[pair_idx % len(turns)]
+        rep = pair_idx // len(turns)
+        prefix = f"Elaborating further, round {rep + 1}: " if rep else ""
+        candidate = messages + [
+            {"role": "user", "content": prefix + user_msg},
+            {"role": "assistant", "content": assistant_msg},
+        ]
+        if messages and templated_length(candidate) > target_tokens:
+            break
+        messages = candidate
+        pair_idx += 1
 
-    # Tokenize to check length, repeat turns if needed
-    text = tokenizer.apply_chat_template(messages, tokenize=False)
-    current_tokens = len(tokenizer.encode(text))
-
-    # If we need more tokens, repeat the conversation
-    repeat = 0
-    while current_tokens < target_tokens and repeat < 10:
-        for user_msg, assistant_msg in turns:
-            messages.append({"role": "user", "content": f"Elaborating further on turn {repeat+1}: {user_msg}"})
-            messages.append({"role": "assistant", "content": assistant_msg})
-        text = tokenizer.apply_chat_template(messages, tokenize=False)
-        current_tokens = len(tokenizer.encode(text))
-        repeat += 1
-
-    # Add final user question for the model to answer
-    messages.append({"role": "user", "content": "Given everything we discussed, what is the single most important insight about KV cache eviction?"})
-
-    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    return tokenizer.apply_chat_template(
+        messages + [final_question], tokenize=False, add_generation_prompt=True
+    )
 
 
 def run_single_trial(
@@ -271,7 +289,7 @@ def run_single_trial(
     print(f"    Prompt: {prompt_tokens} tokens")
 
     # ── Step 1: Cold start (full prefill + generation) ──
-    print(f"    [1/5] Cold-start prefill...", end="", flush=True)
+    print(f"    [1/5] Cold-start generate...", end="", flush=True)
     _sync_if_cuda(device)
     t0 = time.perf_counter()
     with torch.no_grad():
@@ -283,17 +301,24 @@ def run_single_trial(
             output_hidden_states=False,
         )
     _sync_if_cuda(device)
-    cold_ttft_total = (time.perf_counter() - t0) * 1000  # ms
+    cold_e2e_ms = (time.perf_counter() - t0) * 1000  # prefill + all decode steps
 
     cold_text = tokenizer.decode(
         cold_output.sequences[0][prompt_tokens:], skip_special_tokens=True
     )
-    print(f" done ({cold_ttft_total:.0f}ms)")
+    print(f" done ({cold_e2e_ms:.0f}ms e2e)")
 
-    # ── Step 2: Get KV cache from a prefill-only pass ──
+    # ── Step 2: Timed prefill-only pass = true cold TTFT ──
+    # This is the cost a cache hit actually avoids. It must be measured on
+    # its own: the generate() call above includes decode steps that warm
+    # and cold paths share.
     print(f"    [2/5] Extracting KV cache...", end="", flush=True)
+    _sync_if_cuda(device)
+    t0 = time.perf_counter()
     with torch.no_grad():
         prefill_output = model(input_ids, use_cache=True)
+    _sync_if_cuda(device)
+    cold_ttft_ms = (time.perf_counter() - t0) * 1000
     past_kv = prefill_output.past_key_values
 
     # Convert HF KV cache to our numpy format
@@ -324,8 +349,12 @@ def run_single_trial(
     assert restored_kv_data is not None, "Cache load failed — session not found!"
     print(f" done ({load_latency:.1f}ms)")
 
-    # Convert back to HuggingFace format
+    # Convert back to HuggingFace format (timed: this + the load above is
+    # the full restore path a warm start pays before its first token)
+    t0 = time.perf_counter()
     restored_past_kv = numpy_to_hf_kv(restored_kv_data, device, dtype)
+    _sync_if_cuda(device)
+    restore_to_device_ms = (time.perf_counter() - t0) * 1000
 
     # ── Step 5: Warm start (generate with restored cache) ──
     print(f"    [5/5] Warm-start generation...", end="", flush=True)
@@ -366,25 +395,30 @@ def run_single_trial(
                 break
 
     _sync_if_cuda(device)
-    warm_ttft_total = (time.perf_counter() - t0) * 1000  # Total generation time
-    print(f" done ({warm_ttft_total:.0f}ms, TTFT={warm_ttft:.0f}ms)")
+    warm_e2e_ms = (time.perf_counter() - t0) * 1000  # decode steps only
+    print(f" done ({warm_e2e_ms:.0f}ms e2e, TTFT={warm_ttft:.0f}ms)")
 
     warm_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 
     # ── Compare outputs ──
     semantic_match = cold_text.strip() == warm_text.strip()
-    speedup = cold_ttft_total / max(warm_ttft_total, 0.01)
-    ttft_saved = cold_ttft_total - warm_ttft_total
+    # A warm first token pays: tier load + tensor restore + one forward pass.
+    warm_first_token_path_ms = load_latency + restore_to_device_ms + warm_ttft
+    ttft_speedup = cold_ttft_ms / max(warm_first_token_path_ms, 0.01)
+    e2e_speedup = cold_e2e_ms / max(warm_e2e_ms, 0.01)
 
     return IntegrationResult(
         prompt_tokens=prompt_tokens,
-        cold_start_ttft_ms=round(cold_ttft_total, 2),
-        warm_start_ttft_ms=round(warm_ttft_total, 2),
-        speedup_x=round(speedup, 2),
-        ttft_saved_ms=round(ttft_saved, 2),
+        cold_ttft_ms=round(cold_ttft_ms, 2),
+        warm_ttft_ms=round(warm_ttft, 2),
+        cold_e2e_ms=round(cold_e2e_ms, 2),
+        warm_e2e_ms=round(warm_e2e_ms, 2),
+        ttft_speedup_x=round(ttft_speedup, 2),
+        e2e_speedup_x=round(e2e_speedup, 2),
         cache_size_bytes=cache_size,
         save_latency_ms=round(save_latency, 2),
         load_latency_ms=round(load_latency, 2),
+        restore_to_device_ms=round(restore_to_device_ms, 2),
         semantic_match=semantic_match,
         cold_output=cold_text[:200],
         warm_output=warm_text[:200],
@@ -477,9 +511,10 @@ def run_integration(
             )
             results.append(result)
 
-            print(f"    Result: Cold={result.cold_start_ttft_ms:.0f}ms → "
-                  f"Warm={result.warm_start_ttft_ms:.0f}ms "
-                  f"({result.speedup_x:.2f}x speedup)")
+            print(f"    Result: TTFT {result.cold_ttft_ms:.0f}ms → {result.warm_ttft_ms:.0f}ms "
+                  f"({result.ttft_speedup_x:.2f}x) | "
+                  f"E2E {result.cold_e2e_ms:.0f}ms → {result.warm_e2e_ms:.0f}ms "
+                  f"({result.e2e_speedup_x:.2f}x)")
             print(f"    Semantic match: {'✓' if result.semantic_match else '✗ MISMATCH'}")
             if not result.semantic_match:
                 print(f"      Cold: {result.cold_output[:100]}...")
@@ -487,42 +522,43 @@ def run_integration(
 
     # ── Print summary table ──
     print()
-    print("=" * 100)
+    print("=" * 112)
     print("  RESULTS: TinyLlama KV Cache Persistence Integration")
-    print("=" * 100)
-    print(f"  {'Tokens':>8} {'Cold TTFT':>12} {'Warm TTFT':>12} {'Speedup':>10} "
-          f"{'TTFT Saved':>12} {'Cache Size':>12} {'Save':>10} {'Load':>10} {'Match':>7}")
-    print("  " + "-" * 96)
+    print("=" * 112)
+    print(f"  {'Tokens':>7} {'Cold TTFT':>11} {'Warm TTFT':>11} {'TTFT x':>8} "
+          f"{'Cold E2E':>10} {'Warm E2E':>10} {'E2E x':>7} "
+          f"{'Save':>7} {'Load':>7} {'Restore':>8} {'Match':>6}")
+    print("  " + "-" * 108)
 
     for r in results:
-        print(f"  {r.prompt_tokens:>8} {r.cold_start_ttft_ms:>10.0f}ms "
-              f"{r.warm_start_ttft_ms:>10.0f}ms {r.speedup_x:>9.2f}x "
-              f"{r.ttft_saved_ms:>10.0f}ms {r.cache_size_bytes/1024:>10.1f}KB "
-              f"{r.save_latency_ms:>8.0f}ms {r.load_latency_ms:>8.0f}ms "
+        print(f"  {r.prompt_tokens:>7} {r.cold_ttft_ms:>9.0f}ms {r.warm_ttft_ms:>9.0f}ms "
+              f"{r.ttft_speedup_x:>7.2f}x "
+              f"{r.cold_e2e_ms:>8.0f}ms {r.warm_e2e_ms:>8.0f}ms {r.e2e_speedup_x:>6.2f}x "
+              f"{r.save_latency_ms:>5.0f}ms {r.load_latency_ms:>5.0f}ms "
+              f"{r.restore_to_device_ms:>6.0f}ms "
               f"{'  ✓' if r.semantic_match else '  ✗'}")
 
-    print("=" * 100)
+    print("=" * 112)
 
     # ── Summary statistics ──
-    avg_cold = np.mean([r.cold_start_ttft_ms for r in results])
-    avg_warm = np.mean([r.warm_start_ttft_ms for r in results])
-    avg_speedup = np.mean([r.speedup_x for r in results])
+    avg_ttft_speedup = np.mean([r.ttft_speedup_x for r in results])
+    avg_e2e_speedup = np.mean([r.e2e_speedup_x for r in results])
     all_match = all(r.semantic_match for r in results)
 
-    print(f"\n  Average Cold TTFT:  {avg_cold:.0f}ms")
-    print(f"  Average Warm TTFT:  {avg_warm:.0f}ms")
-    print(f"  Average Speedup:    {avg_speedup:.2f}x")
-    print(f"  Semantic Coherence: {'ALL MATCH ✓' if all_match else 'MISMATCHES DETECTED ✗'}")
+    print(f"\n  Average TTFT Speedup: {avg_ttft_speedup:.2f}x "
+          f"(cold prefill vs load + restore + first token)")
+    print(f"  Average E2E Speedup:  {avg_e2e_speedup:.2f}x")
+    print(f"  Semantic Coherence:   {'ALL MATCH ✓' if all_match else 'MISMATCHES DETECTED ✗'}")
 
     # ── Cost model validation ──
-    # Compare predicted recompute time vs actual measured cold-start TTFT
+    # Compare predicted recompute time vs measured prefill-only cold TTFT
     from src.kv_cache_tier.utils.cost_model import CostModel
     cost_model = CostModel()
 
     print(f"\n  ── Cost Model Validation ──")
     for r in results:
         predicted_ms = cost_model.compute_recompute_time(r.prompt_tokens) * 1000
-        actual_ms = r.cold_start_ttft_ms
+        actual_ms = r.cold_ttft_ms
         error_pct = abs(predicted_ms - actual_ms) / actual_ms * 100
         print(f"    {r.prompt_tokens} tokens: predicted={predicted_ms:.0f}ms "
               f"actual={actual_ms:.0f}ms error={error_pct:.1f}%")

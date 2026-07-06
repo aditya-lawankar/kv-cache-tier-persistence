@@ -53,7 +53,7 @@ for Tiered LLM KV-Cache Persistence}
 \begin{abstract}
 Large Language Model serving is bottlenecked by memory capacity for Key-Value (KV) caches. Multi-turn conversations force frequent cache eviction and costly recomputation (the ``cold-start'' problem). We build a three-tier KV cache persistence system (VRAM $\to$ NVMe $\to$ object storage) and evaluate six eviction policies---LRU, a recency heuristic, learned binary classification, static value-density, and a lifetime-normalized space-time density policy---under a statistically rigorous protocol: virtual-clock trace replay, persona-driven synthetic workloads, tier-discounted value accounting, and paired comparisons across 10 seeds with 95\% confidence intervals.
 
-Our evaluation yields four findings. (1)~\emph{LRU is a far stronger baseline than commonly assumed}: under honest accounting it wins both hit rate and dollar value on every capacity-constrained workload we test, with all paired deltas significant. (2)~\emph{Hit rate and value decouple}: on heavy-tailed workloads a simple heuristic retains 97.5\% of LRU's GPU-dollar value while conceding 12 hit-rate points, and policy rankings by hit rate invert under value---our learned classifier beats space-time density by 9 hit-rate points yet delivers \$46/day \emph{less} value. (3)~\emph{Static value-density eviction collapses}: maximizing value-per-byte without bounding sojourn time violates Little's Law dynamics, and our lifetime-normalized space-time objective recovers \$94/day over it (95\% CI [77, 112]). (4)~A break-even analysis shows tiered persistence is latency-positive from $N^{*}{\approx}12$ tokens for 70B-class GQA models but only beyond ${\sim}43$k tokens for 7B MHA models---the KV-bytes-per-FLOP ratio, not model quality, governs deployability. All behavioral findings replicate when replaying real production arrival timestamps and request sizes from the Azure LLM inference trace, where the hit-rate/value inversion is even stronger: a policy conceding 19 hit-rate points delivers \$105/day \emph{more} value. We validate end-to-end with TinyLlama-1.1B, demonstrating 48$\times$ TTFT improvement on CPU with byte-identical greedy decoding from restored caches.
+Our evaluation yields four findings. (1)~\emph{LRU is a far stronger baseline than commonly assumed}: under honest accounting it wins both hit rate and dollar value on every capacity-constrained workload we test, with all paired deltas significant. (2)~\emph{Hit rate and value decouple}: on heavy-tailed workloads a simple heuristic retains 97.5\% of LRU's GPU-dollar value while conceding 12 hit-rate points, and policy rankings by hit rate invert under value---our learned classifier beats space-time density by 9 hit-rate points yet delivers \$46/day \emph{less} value. (3)~\emph{Static value-density eviction collapses}: maximizing value-per-byte without bounding sojourn time violates Little's Law dynamics, and our lifetime-normalized space-time objective recovers \$94/day over it (95\% CI [77, 112]). (4)~A break-even analysis shows tiered persistence is latency-positive from $N^{*}{\approx}12$ tokens for 70B-class GQA models but only beyond ${\sim}43$k tokens for 7B MHA models---the KV-bytes-per-FLOP ratio, not model quality, governs deployability. All behavioral findings replicate when replaying real production arrival timestamps and request sizes from the Azure LLM inference trace, where the hit-rate/value inversion is even stronger: a policy conceding 19 hit-rate points delivers \$105/day \emph{more} value. We validate end-to-end with TinyLlama-1.1B on both CPU and GPU: 19$\times$ TTFT improvement on CPU, measured parity on a T4 at 598 tokens---empirically confirming the break-even model---and byte-identical greedy decoding from restored caches whenever storage and serving precision match.
 \end{abstract}
 
 % CCS / Index terms
@@ -312,37 +312,42 @@ To validate with a real transformer, we integrated our \texttt{TieredCacheManage
 
 \textbf{GQA Compatibility.} Modern models use Grouped Query Attention where KV heads (4) differ from query heads (32). Our serialization must use \texttt{num\_key\_value\_heads} for tensor dimensions---a critical detail for production deployment.
 
+\textbf{Metric definitions.} We report TTFT and end-to-end speedups \emph{separately}. Cold TTFT is a timed prefill-only forward pass---the cost a cache hit actually avoids; warm TTFT is tier load + tensor restore + one forward pass. A tempting shortcut---comparing a cold \texttt{generate()} total (prefill \emph{plus} decode) against warm first-token latency---inflates the apparent speedup ${\sim}2.5\times$ by crediting the warm path with decode time both paths share; we flag this because the conflation is easy to make and appears in informal benchmarks. All GPU timings are bracketed by \texttt{cuda.synchronize()}.
+
 \begin{table}[t]
 \centering
-\caption{TinyLlama integration results (598-token prompt, CPU)}
+\caption{TinyLlama integration, 598-token prompt. CPU: FP32 serving, mean of 2 trials. T4 GPU: FP16 serving, median of 9 trials. GPU cold TTFT is derived as the median paired cold$-$warm E2E gap (prefill-only was not separately instrumented on the GPU runs).}
 \label{tab:tinyllama}
 \small
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lrrr@{}}
+\begin{tabular}{@{}lrr@{}}
 \toprule
-Metric & Trial 1 & Trial 2 & Average \\
+Metric & CPU (FP32) & T4 GPU (FP16) \\
 \midrule
-Cold-start TTFT       & 11,804ms & 11,449ms & 11,627ms \\
-Warm-start TTFT       & 239ms    & 243ms    & 241ms    \\
-TTFT speedup          & 49.4$\times$ & 47.1$\times$ & 48.3$\times$ \\
-E2E speedup (30 tok.) & 1.80$\times$ & 1.69$\times$ & 1.75$\times$ \\
-Cache size (FP16)     & 13,156 KB & 13,156 KB & 13,156 KB \\
-Save latency          & 55ms     & 57ms     & 56ms     \\
-Load latency          & 4ms      & 5ms      & 4.5ms    \\
-Semantic match        & \checkmark & \checkmark & 100\%  \\
+Cold TTFT (prefill)       & 4,980ms & ${\sim}$37ms \\
+Warm TTFT (load+restore+step) & 258ms & ${\sim}$40ms \\
+TTFT speedup              & \textbf{19.3$\times$} & ${\sim}$1$\times$ \\
+E2E speedup (50 tok.)     & 1.45$\times$ & 1.03$\times$ \\
+Cache size (FP16)         & 13,156 KB & 13,156 KB \\
+Save / load latency       & 54 / 15ms & 50 / 18ms \\
+Byte-identical output     & \checkmark\ (2/2) & \checkmark\ (9/9) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Warm-start TTFT of \textbf{241ms} versus cold-start 11,627ms represents a \textbf{48$\times$ improvement}. End-to-end speedup is 1.75$\times$ because decode-phase speed is independent of cache state. Greedy-decoded output was byte-identical, confirming FP16 quantization introduces no degradation.
+\textbf{CPU results.} Cold prefill of 4,980ms versus a 258ms warm path (15ms tier load + 24ms tensor restore + 219ms first forward pass) is a \textbf{19.3$\times$ TTFT improvement}. End-to-end speedup is 1.45$\times$ because decode-phase speed is independent of cache state.
 
-\textbf{Cost Model Calibration.} Our simulation cost model (A100 GPU, \$2.50/hr) predicted 57,747ms for 598-token prefill versus actual 11,627ms on CPU---expected since model parameters must be calibrated per hardware. Relative policy comparisons remain valid.
+\textbf{GPU results.} On a T4 the same experiment collapses to parity: prefilling 598 tokens takes ${\sim}$37ms, comparable to the ${\sim}$40ms restore path (median E2E speedup 1.03$\times$ across 9 trials, range 0.80--1.69, dominated by run-to-run variance). This is not a failure of the system---it is the break-even model (\S\ref{sec:breakeven}) validated empirically: 598 tokens sits \emph{below} TinyLlama's crossover $N^{*}{\approx}1{,}561$, precisely where persistence should not pay on latency.
+
+\textbf{Precision matching.} Greedy decoding from a restored cache is byte-identical whenever storage and serving precision agree: all 9 FP16-GPU trials matched exactly. Under FP32 CPU serving reading FP16-stored caches, outputs matched at 598 tokens but diverged at a near-tie token on a short 168-token prompt (both outputs remained coherent)---numerically expected, as storage rounding can flip near-tie argmax decisions. Deployment guidance: store caches in the serving dtype; exact restoration then costs nothing.
+
+\textbf{Cost Model Calibration.} Our simulation cost model (A100 GPU, \$2.50/hr) predicted 57,747ms for a 598-token prefill versus 4,980ms measured on CPU and ${\sim}$37ms on a T4---absolute constants must be calibrated per hardware, while relative policy comparisons remain valid.
 
 % ═════════════════════════════════════════════════════════════
 \section{When Does Persistence Beat Recompute? A Break-Even Analysis}
 \label{sec:breakeven}
 
-The 48$\times$ CPU speedup above should not be extrapolated to GPUs uncritically: on an A100, prefilling a 598-token prompt through a 1.1B model takes tens of milliseconds---comparable to the restore path itself. Persistence wins on raw latency only beyond a \emph{break-even context length} $N^{*}$, which we can derive analytically.
+The 19$\times$ CPU TTFT speedup above evaporated to parity on a T4, where prefilling 598 tokens takes ${\sim}$37ms---comparable to the restore path itself. Persistence wins on raw latency only beyond a \emph{break-even context length} $N^{*}$, which we can derive analytically and which our GPU measurements land exactly where predicted.
 
 Restoring a persisted cache moves $O(N)$ bytes:
 \begin{equation}
@@ -389,14 +394,14 @@ Table~\ref{tab:breakeven} and Figure~\ref{fig:breakeven} expose the governing qu
 
 \textbf{Decision Framework.} (1)~Uniform workloads ($\sigma{=}0.5$): LRU dominates---ML overhead is unjustified. (2)~High-variance ($\sigma{=}1.2$): if the deployment metric is dollar value, simple recency heuristics are within noise of LRU and far cheaper than learned policies; evaluate by \$/Day, never hit rate. (3)~Value-aware eviction must be lifetime-normalized (V3), not static (V2)---but neither yet beats LRU.
 
-\textbf{Limitations.} (1)~The real-trace evaluation replays production arrivals and sizes, but session \emph{return behavior} remains modeled: public LLM inference traces carry no conversation identifiers, and we show linkage is not reconstructable from them (\S\ref{sec:realtrace}). Datasets with hashed conversation identifiers (e.g., WildChat, LMSYS-Chat-1M) could close this gap. (2)~CPU-only TinyLlama validation omits GPU-specific effects (CUDA fragmentation, PCIe overhead); the break-even model (\S\ref{sec:breakeven}) bounds but does not measure them. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The toy KV geometry preserves relative policy comparisons but not absolute capacity dynamics.
+\textbf{Limitations.} (1)~The real-trace evaluation replays production arrivals and sizes, but session \emph{return behavior} remains modeled: public LLM inference traces carry no conversation identifiers, and we show linkage is not reconstructable from them (\S\ref{sec:realtrace}). Datasets with hashed conversation identifiers (e.g., WildChat, LMSYS-Chat-1M) could close this gap. (2)~GPU validation used a single T4 at one context length below the crossover; measuring the region \emph{above} $N^{*}$ and on server-class GPUs (A100/H100, where higher FLOPs push $N^{*}$ further out) remains. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The toy KV geometry preserves relative policy comparisons but not absolute capacity dynamics.
 
 \textbf{Beating LRU.} V3's remaining gap suggests two directions: hybrid policies that default to recency and deviate only for entries in the extreme value tail, where the quadratic payoff dominates; and admission control at the \emph{cold-to-warm promotion} boundary rather than at eviction time, where the Little's Law penalty does not apply.
 
 % ═════════════════════════════════════════════════════════════
 \section{Conclusion}
 
-We presented a three-tier KV cache persistence system and a statistically rigorous evaluation of six eviction policies across three synthetic workloads, ten seeds, and a replay of the Azure LLM inference production trace, validated end-to-end with TinyLlama-1.1B. Our investigation yielded four insights: (1)~under honest evaluation, LRU beats every learned and value-aware policy we tested on both metrics---and our own earlier harness bugs had shown the opposite, a caution for the learned-caching literature; (2)~hit rate and dollar value decouple on heavy-tailed workloads, to the point of inverting policy rankings---most sharply on the real trace, where the inversion reaches 19 hit-rate points and \$105/day; (3)~static value-density eviction collapses under Little's Law, and lifetime normalization (space-time density, an LHD adaptation) significantly recovers value on synthetic and real workloads alike; (4)~an analytic break-even model shows tiered persistence is latency-positive almost immediately for large GQA models. Prototype validation demonstrates 48$\times$ CPU TTFT improvement with byte-identical restoration. Beating LRU on value remains open; we believe hybrid recency/value-tail policies are the most promising path.
+We presented a three-tier KV cache persistence system and a statistically rigorous evaluation of six eviction policies across three synthetic workloads, ten seeds, and a replay of the Azure LLM inference production trace, validated end-to-end with TinyLlama-1.1B. Our investigation yielded four insights: (1)~under honest evaluation, LRU beats every learned and value-aware policy we tested on both metrics---and our own earlier harness bugs had shown the opposite, a caution for the learned-caching literature; (2)~hit rate and dollar value decouple on heavy-tailed workloads, to the point of inverting policy rankings---most sharply on the real trace, where the inversion reaches 19 hit-rate points and \$105/day; (3)~static value-density eviction collapses under Little's Law, and lifetime normalization (space-time density, an LHD adaptation) significantly recovers value on synthetic and real workloads alike; (4)~an analytic break-even model shows tiered persistence is latency-positive almost immediately for large GQA models---and our CPU/GPU prototype measurements (19$\times$ TTFT on CPU; parity on a T4 below the crossover) land where the model predicts, with byte-identical restoration whenever storage and serving precision match. Beating LRU on value remains open; we believe hybrid recency/value-tail policies are the most promising path.
 
 % ═════════════════════════════════════════════════════════════
 \balance
