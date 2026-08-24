@@ -66,6 +66,9 @@ def load_aggregates():
     return {(r["policy"], r["workload"]): r for r in rows}
 
 
+GPU_S_PER_USD = 3600.0 / 2.50
+
+
 def _series(agg, workload, order):
     """Extract means and symmetric CI half-widths for one workload, policy-ordered."""
     hit_mean, hit_err, cost_mean, cost_err, delta = [], [], [], [], []
@@ -74,10 +77,15 @@ def _series(agg, workload, order):
         hit_mean.append(r["hit_rate_mean"] * 100)
         lo, hi = r["hit_rate_ci95"]
         hit_err.append((hi - lo) * 100 / 2)
-        cost_mean.append(r["cost_saved_per_day_mean"])
+        # Value is reported in GPU-seconds saved per day; the stored figure is
+        # dollars at $2.50 per GPU-hour, so 1 $/day = 3600/2.50 = 1440 GPU-s/day.
+        # Converting here keeps the plots in the scale-free unit without
+        # re-deriving them from raw runs.
+        cost_mean.append(r["cost_saved_per_day_mean"] * GPU_S_PER_USD)
         lo, hi = r["cost_saved_per_day_ci95"]
-        cost_err.append((hi - lo) / 2)
-        delta.append(r.get("delta_cost_vs_lru_mean"))
+        cost_err.append((hi - lo) / 2 * GPU_S_PER_USD)
+        d = r.get("delta_cost_vs_lru_mean")
+        delta.append(None if d is None else d * GPU_S_PER_USD)
     return (np.array(hit_mean), np.array(hit_err),
             np.array(cost_mean), np.array(cost_err), delta)
 
@@ -199,9 +207,9 @@ def make_figure2(agg):
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.set_ylabel("$/Day Saved (USD)")
+    ax.set_ylabel("GPU-seconds saved per day")
     ax.set_ylim(0, max(cost_pow.max(), cost_ent.max()) * 1.3)
-    ax.set_title(f"Daily GPU Cost Savings by Policy and Workload ({n_seeds} seeds, 95% CI)")
+    ax.set_title(f"GPU Time Saved by Policy and Workload ({n_seeds} seeds, 95% CI)")
     ax.legend(frameon=True, framealpha=0.9, edgecolor="#cccccc")
 
     ax.yaxis.grid(True, linestyle="--", alpha=0.5)
