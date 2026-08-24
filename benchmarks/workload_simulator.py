@@ -94,7 +94,13 @@ class WorkloadSimulator:
     """Generates synthetic user traffic using statistically rigorous distributions."""
 
     def __init__(self, profile_name: str, duration_days: float = 1.0, seed: int = 42,
-                 user_pool_size: int = 1000):
+                 user_pool_size: int = 1000, persona_sigma: float = 0.6):
+        """persona_sigma controls how much users differ from one another in
+        return propensity. It is the log-normal sigma of `return_affinity`,
+        and therefore sets how much per-user signal a predictor can possibly
+        learn: at 0.0 every user is identical, per-user features carry no
+        information, and no model can beat chance. The default 0.6 reproduces
+        the traces used throughout the main study."""
         if profile_name not in PROFILES:
             raise ValueError(f"Unknown profile: {profile_name}")
         self.profile = PROFILES[profile_name]
@@ -104,6 +110,7 @@ class WorkloadSimulator:
         self.rng = random.Random(seed)
         self._personas: Dict[int, UserPersona] = {}
         self.user_pool_size = user_pool_size
+        self.persona_sigma = persona_sigma
 
     # ── Personas ────────────────────────────────────────────────
 
@@ -115,7 +122,8 @@ class WorkloadSimulator:
                 user_id=f"user_{index}",
                 # Log-normal around 1.0: some users almost never return,
                 # some return nearly always.
-                return_affinity=self.rng.lognormvariate(0.0, 0.6),
+                return_affinity=(1.0 if self.persona_sigma <= 0.0
+                                 else self.rng.lognormvariate(0.0, self.persona_sigma)),
                 token_scale=self.rng.lognormvariate(0.0, 0.4),
                 active_start_hour=self.rng.randint(0, 23),
             )

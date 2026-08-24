@@ -153,6 +153,7 @@ def train_and_evaluate(
     resume_window_minutes: float = 60.0,
     duration_days: float = 7.0,
     seed: int = 42,
+    persona_sigma: float = 0.6,
 ) -> dict:
     """
     Full training pipeline:
@@ -170,7 +171,8 @@ def train_and_evaluate(
 
     for profile_name in PROFILES:
         logger.info(f"Generating {duration_days}-day trace for profile: {profile_name}")
-        sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed)
+        sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed,
+                                persona_sigma=persona_sigma)
         events = sim.generate()
         summary = sim.summary(events)
         logger.info(f"  -> {summary['total_events']} events, "
@@ -278,9 +280,23 @@ def train_and_evaluate(
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train session-resumption predictors")
+    parser.add_argument("--output-dir", type=str, default="models",
+                        help="Where to write the fitted predictors (default: models)")
+    parser.add_argument("--persona-sigma", type=float, default=0.6,
+                        help="Between-user dispersion in return propensity for the "
+                             "training traces. Sets the ceiling on learnable per-user "
+                             "signal; 0.0 makes users interchangeable (default: 0.6)")
+    parser.add_argument("--duration-days", type=float, default=7.0)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+
     train_and_evaluate(
-        output_dir="models",
+        output_dir=args.output_dir,
         resume_window_minutes=60.0,
-        duration_days=7.0,
-        seed=42,
+        duration_days=args.duration_days,
+        seed=args.seed,
+        persona_sigma=args.persona_sigma,
     )
