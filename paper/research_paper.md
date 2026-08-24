@@ -1,9 +1,11 @@
 > [!WARNING]
-> **SUPERSEDED DRAFT.** This markdown draft predates the corrected evaluation methodology
-> (virtual-clock replay, persona workloads, tier-discounted paired multi-seed statistics)
-> and its numbers are invalid — notably, the "$68/day learned-policy win over LRU" claim
-> REVERSED under the corrected harness. The canonical, current paper is
-> `paper/latex/paper.tex`; current numbers live in
+> **SUPERSEDED DRAFT.** This markdown draft predates two corrections and its numbers are
+> invalid. First, the corrected evaluation methodology (virtual-clock replay, persona
+> workloads, tier-discounted paired multi-seed statistics) reversed the "$68/day
+> learned-policy win over LRU" claim. Second, the cost model it relies on contained no
+> model architecture at all, which inverted the corrected conclusion in turn: under
+> architecture-correct pricing, LRU wins hit rate but delivers the *least* value.
+> The canonical, current paper is `paper/latex/paper.tex`; current numbers live in
 > `benchmarks/results/experiment_results_v3_aggregate.json`.
 
 # When Does Value-Density Eviction Help? A Workload-Dependent Analysis of KV Cache Eviction for LLM Serving
