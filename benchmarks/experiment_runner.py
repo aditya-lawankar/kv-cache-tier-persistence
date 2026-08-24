@@ -52,7 +52,11 @@ from src.kv_cache_tier.eviction.predictive import PredictiveEvictionPolicy
 from src.kv_cache_tier.eviction.value_density import ValueDensityPolicy
 from src.kv_cache_tier.eviction.space_time import SpaceTimeDensityPolicy
 from src.kv_cache_tier.eviction.predictors import ResumePredictor
+from src.kv_cache_tier.eviction.oracle import (
+    TraceOracle, BeladyPolicy, OracleClassifierPolicy, OracleSpaceTimePolicy,
+)
 from src.kv_cache_tier.utils.cost_model import CostModel
+from src.kv_cache_tier.utils.hardware import MODELS_BY_KEY
 from src.kv_cache_tier.utils.clock import SimulatedClock
 from benchmarks.workload_simulator import WorkloadSimulator, PROFILES
 
@@ -82,6 +86,10 @@ class ExperimentResult:
     load_latency_p95_ms: float
     cost_saved_per_day_usd: float
     gpu_hours_saved_per_day: float
+    arch: str = "tinyllama"
+    # "<tokens>|<tier>" -> hit count. Sufficient to re-price this run under a
+    # different cost model without re-simulating (see the hit site).
+    hit_histogram: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,16 +114,22 @@ class AggregateResult:
 # Config builder
 # ──────────────────────────────────────────────────────────────────
 
-def _make_config(policy_name: str, tmp_dir: str) -> SystemConfig:
+def _make_config(policy_name: str, tmp_dir: str, capacity_mb: int = 500) -> SystemConfig:
     """Create a SystemConfig tuned for fast simulation.
 
-    Total capacity: 500 MB (50 hot + 150 warm + 300 cold).
+    Default total capacity: 500 MB (50 hot + 150 warm + 300 cold).
     Small enough to force sustained eviction pressure under enterprise
     and power-user workloads, exercising the victim-selection logic.
+    `capacity_mb` rescales the total while preserving the 10/30/60
+    hot/warm/cold split (used by the capacity sweep).
     """
     # Map experiment policy names to config eviction policy names
     if policy_name in ("lru", "ttl"):
         eviction_policy = policy_name
+    elif policy_name in ORACLE_POLICIES:
+        # Placeholder: the manager's policy is replaced with the oracle
+        # instance once the trace (and thus the future) is known.
+        eviction_policy = "lru"
     elif policy_name in ("value_density", "value_density_ac"):
         eviction_policy = "value_density"
     elif policy_name == "space_time":
@@ -126,9 +140,9 @@ def _make_config(policy_name: str, tmp_dir: str) -> SystemConfig:
     cfg = SystemConfig(
         model=ModelConfig(num_layers=2, num_heads=2, head_dim=32, block_size=16, dtype="float16"),
         tiers=TierConfig(
-            hot_capacity_mb=50,      # 50 MB hot tier
-            warm_capacity_mb=150,    # 150 MB warm
-            cold_capacity_mb=300,    # 300 MB cold (Total 500 MB capacity)
+            hot_capacity_mb=int(capacity_mb * 0.10),   # default 50 MB
+            warm_capacity_mb=int(capacity_mb * 0.30),  # default 150 MB
+            cold_capacity_mb=int(capacity_mb * 0.60),  # default 300 MB
             warm_storage_path=os.path.join(tmp_dir, "warm"),
             cold_storage_path=os.path.join(tmp_dir, "cold"),
             cold_backend="local",
@@ -145,6 +159,28 @@ def _make_config(policy_name: str, tmp_dir: str) -> SystemConfig:
 # metadata policies score on, AND the savings we credit on a hit — or the
 # evaluation credits a different quantity than the policies optimize.
 TOKEN_CLAMP = 8192
+
+# Ground-truth ablation policies (see src/kv_cache_tier/eviction/oracle.py).
+# Excluded from the default matrix; select explicitly via --policies.
+ORACLE_POLICIES = ("belady", "oracle_v1", "oracle_v3")
+
+# V2+AC's admission threshold is a value density (GPU-seconds per byte), so it
+# is only meaningful relative to the cost model that produces those densities.
+# It was previously hardcoded at 1.5e-4, calibrated against a cost model whose
+# recompute times were ~4 orders of magnitude larger; under corrected economics
+# that constant exceeds every attainable score and admits nothing, which would
+# read as "admission control collapses" when it actually means "the threshold
+# is stale." Deriving it keeps the gate at the same operating point -- just
+# below the density of a median enterprise session -- for any cost model.
+_AC_REFERENCE_TOKENS = 2048
+_AC_CALIBRATION = 0.9086  # threshold / density(2048 tok, P=0.5) in the original study
+
+
+def _admission_threshold(cost_model: CostModel,
+                         sim_bytes_per_token: int = 512) -> float:
+    ref_density = (0.5 * cost_model.compute_recompute_time(_AC_REFERENCE_TOKENS)
+                   / (sim_bytes_per_token * _AC_REFERENCE_TOKENS))
+    return _AC_CALIBRATION * ref_density
 
 
 def _generate_kv_data(model: ModelConfig, token_count: int) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
@@ -169,6 +205,9 @@ def run_single_experiment(
     seed: int = 42,
     predictor: Optional[ResumePredictor] = None,
     events: Optional[list] = None,
+    capacity_mb: int = 500,
+    arch: str = "tinyllama",
+    persona_sigma: float = 0.6,
 ) -> ExperimentResult:
     """
     Simulate the cache lifecycle for one (policy, workload, seed) triple.
@@ -194,8 +233,12 @@ def run_single_experiment(
 
     try:
         clock = SimulatedClock()
-        config = _make_config(policy_name, tmp_dir)
-        manager = TieredCacheManager(config, clock=clock)
+        config = _make_config(policy_name, tmp_dir, capacity_mb=capacity_mb)
+        # One cost model instance prices BOTH the policies' decisions and the
+        # experiment's accounting, so a policy can never optimize a different
+        # objective than the one it is scored on.
+        cost_model = CostModel(model_spec=MODELS_BY_KEY[arch])
+        manager = TieredCacheManager(config, clock=clock, cost_model=cost_model)
 
         # Inject ML predictor into the appropriate policy
         if predictor:
@@ -206,20 +249,35 @@ def run_single_experiment(
                 manager.eviction_policy.set_predictor(predictor)
                 # Set admission threshold for the AC variant
                 if policy_name == "value_density_ac":
-                    manager.eviction_policy.admission_threshold = 0.00015
+                    manager.eviction_policy.admission_threshold = _admission_threshold(cost_model)
 
         # Generate trace (unless a preloaded one was injected)
         if events is None:
-            sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed)
+            sim = WorkloadSimulator(profile_name, duration_days=duration_days, seed=seed,
+                                    persona_sigma=persona_sigma)
             events = sim.generate()
 
-        cost_model = CostModel()
+        # Oracle policies need the trace's future: swap in the real policy
+        # now that the event list exists. Legitimate only because replay is
+        # open-loop -- arrivals do not depend on cache behavior.
+        if policy_name in ORACLE_POLICIES:
+            oracle = TraceOracle(events)
+            if policy_name == "belady":
+                oracle_policy = BeladyPolicy(oracle)
+            elif policy_name == "oracle_v1":
+                oracle_policy = OracleClassifierPolicy(oracle)
+            else:
+                oracle_policy = OracleSpaceTimePolicy(oracle, cost_model=cost_model)
+            oracle_policy.set_clock(clock)
+            manager.eviction_policy = oracle_policy
 
         save_latencies: List[float] = []
         load_latencies: List[float] = []
         hit_miss_log: List[int] = []              # 1 = hit, 0 = miss
         hits_by_tier: Dict[str, int] = {"hot": 0, "warm": 0, "cold": 0}
         gpu_seconds_saved: float = 0.0
+        # (cached_token_count, tier) -> count; see the note at the hit site.
+        hit_histogram: Dict[Tuple[int, str], int] = {}
 
         # session_id -> token count of the state actually in the cache.
         # A hit saves recomputing the CACHED context; the resume event's
@@ -261,10 +319,22 @@ def run_single_experiment(
                 if hit:
                     hit_miss_log.append(1)
                     hits_by_tier[hit_tier] += 1
+                    cached_n = cached_tokens.get(evt.session_id, 0)
+                    # Size is derived from the priced architecture, NOT from
+                    # the simulator's downscaled serialization: value and
+                    # restore must be quoted in the same economics or a hit
+                    # whose restore exceeds its prefill gets credited as a win.
                     gpu_seconds_saved += cost_model.savings_per_hit_seconds(
-                        cached_token_count=cached_tokens.get(evt.session_id, 0),
+                        cached_token_count=cached_n,
                         tier=hit_tier,
-                        size_bytes=hit_size,
+                    )
+                    # (tokens, tier) is a sufficient statistic for re-pricing
+                    # this run under any other cost model without re-simulating
+                    # -- exact for policies whose DECISIONS ignore the cost
+                    # model (LRU, heuristic, V1, Belady, oracle_v1); the
+                    # others change behavior and must be re-run.
+                    hit_histogram[(cached_n, hit_tier)] = (
+                        hit_histogram.get((cached_n, hit_tier), 0) + 1
                     )
                 else:
                     hit_miss_log.append(0)
@@ -286,9 +356,9 @@ def run_single_experiment(
         load_arr = np.array(load_latencies) if load_latencies else np.array([0.0])
 
         # Scale to per-day metrics based on simulation duration
-        scaling_factor = 1.0 / duration_days
-        gpu_hours_saved_per_day = (gpu_seconds_saved * scaling_factor) / 3600.0
-        cost_saved_per_day_usd = gpu_hours_saved_per_day * cost_model.gpu_cost_per_hour
+        per_day = cost_model.gpu_seconds_to_usd_per_day(gpu_seconds_saved, duration_days)
+        gpu_hours_saved_per_day = per_day["gpu_hours_saved_per_day"]
+        cost_saved_per_day_usd = per_day["cost_saved_per_day_usd"]
 
         return ExperimentResult(
             policy=policy_name,
@@ -305,7 +375,9 @@ def run_single_experiment(
             load_latency_p50_ms=round(float(np.percentile(load_arr, 50)), 3),
             load_latency_p95_ms=round(float(np.percentile(load_arr, 95)), 3),
             cost_saved_per_day_usd=round(cost_saved_per_day_usd, 2),
-            gpu_hours_saved_per_day=round(gpu_hours_saved_per_day, 2),
+            gpu_hours_saved_per_day=round(gpu_hours_saved_per_day, 4),
+            arch=arch,
+            hit_histogram={f"{n}|{t}": c for (n, t), c in sorted(hit_histogram.items())},
         )
 
     finally:
@@ -385,6 +457,11 @@ def run_full_experiment(
     seeds: Optional[List[int]] = None,
     output_dir: str = "benchmarks/results",
     only_policies: Optional[List[str]] = None,
+    workloads: Optional[List[str]] = None,
+    capacity_mb: int = 500,
+    arch: str = "tinyllama",
+    persona_sigma: float = 0.6,
+    predictor_path: str = "models/logistic_predictor.pkl",
 ) -> Tuple[List[ExperimentResult], List[AggregateResult]]:
     """
     Run the 5 x 3 x N experiment matrix:
@@ -407,14 +484,17 @@ def run_full_experiment(
         ("space_time",       True),    # V3: P(resume) x cost / (size x E[dt])
     ]
     if only_policies:
-        policies = [p for p in policies if p[0] in only_policies]
-    workloads = ["casual", "enterprise", "power_user"]
+        # Oracle ablations join the roster only when explicitly requested,
+        # so the canonical matrix is never silently changed.
+        oracle_entries = [(name, False) for name in ORACLE_POLICIES]
+        policies = [p for p in policies + oracle_entries if p[0] in only_policies]
+    workloads = workloads or ["casual", "enterprise", "power_user"]
 
     # Load trained predictor (use logistic for both V1 and V2 for fair comparison)
     logistic_predictor = None
-    if os.path.exists("models/logistic_predictor.pkl"):
-        logistic_predictor = ResumePredictor.load("models/logistic_predictor.pkl")
-        print("  [OK] Loaded logistic predictor from models/logistic_predictor.pkl")
+    if os.path.exists(predictor_path):
+        logistic_predictor = ResumePredictor.load(predictor_path)
+        print(f"  [OK] Loaded logistic predictor from {predictor_path}")
     else:
         print("  [--] No trained logistic predictor found -- ML policies will be skipped")
 
@@ -424,7 +504,9 @@ def run_full_experiment(
     print("  EXPERIMENT V3: Multi-seed, virtual-clock, tier-aware evaluation")
     print("=" * 100)
     print(f"  Duration: {duration_days * 24:.1f} hours simulated | Seeds: {seeds}")
-    print(f"  Capacity: 500 MB total (50 hot + 150 warm + 300 cold)")
+    print(f"  Architecture priced: {MODELS_BY_KEY[arch].name}")
+    print(f"  Capacity: {capacity_mb} MB total "
+          f"({int(capacity_mb*0.10)} hot + {int(capacity_mb*0.30)} warm + {int(capacity_mb*0.60)} cold)")
     print(f"  Policies: {', '.join(p[0] for p in policies)}")
     print(f"  Workloads: {', '.join(workloads)}")
     print("=" * 100 + "\n")
@@ -446,6 +528,9 @@ def run_full_experiment(
                     duration_days=duration_days,
                     seed=seed,
                     predictor=predictor,
+                    capacity_mb=capacity_mb,
+                    arch=arch,
+                    persona_sigma=persona_sigma,
                 ))
             elapsed = time.perf_counter() - t0
             results.extend(cell_results)
@@ -485,7 +570,8 @@ def _print_results_table(aggregates: List[AggregateResult]):
     print("  " + "-" * 128)
 
     order = {"lru": 0, "heuristic": 1, "logistic_v1": 2, "value_density": 3,
-             "value_density_ac": 4, "space_time": 5}
+             "value_density_ac": 4, "space_time": 5,
+             "oracle_v1": 6, "oracle_v3": 7, "belady": 8}
     for a in sorted(aggregates, key=lambda x: (x.workload, order.get(x.policy, 9))):
         hit_ci = f"[{a.hit_rate_ci95[0]:.2%}, {a.hit_rate_ci95[1]:.2%}]"
         cost_ci = f"[{a.cost_saved_per_day_ci95[0]:,.0f}, {a.cost_saved_per_day_ci95[1]:,.0f}]"
@@ -507,6 +593,8 @@ def _print_results_table(aggregates: List[AggregateResult]):
 def run_azure_experiment(
     output_dir: str = "benchmarks/results",
     only_policies: Optional[List[str]] = None,
+    arch: str = "tinyllama",
+    predictor_path: str = "models/logistic_predictor.pkl",
 ) -> Tuple[List[ExperimentResult], List[AggregateResult]]:
     """
     Replay ten 6-hour windows of the Azure LLM inference trace
@@ -534,9 +622,9 @@ def run_azure_experiment(
         policies = [p for p in policies if p[0] in only_policies]
 
     logistic_predictor = None
-    if os.path.exists("models/logistic_predictor.pkl"):
-        logistic_predictor = ResumePredictor.load("models/logistic_predictor.pkl")
-        print("  [OK] Loaded logistic predictor from models/logistic_predictor.pkl")
+    if os.path.exists(predictor_path):
+        logistic_predictor = ResumePredictor.load(predictor_path)
+        print(f"  [OK] Loaded logistic predictor from {predictor_path}")
     else:
         print("  [--] No trained logistic predictor found -- ML policies will be skipped")
 
@@ -573,6 +661,7 @@ def run_azure_experiment(
                 seed=w,
                 predictor=predictor,
                 events=events,
+                arch=arch,
             ))
         elapsed = time.perf_counter() - t0
         results.extend(cell_results)
@@ -614,7 +703,26 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="benchmarks/results",
                         help="Output directory for results")
     parser.add_argument("--policies", type=str, default=None,
-                        help="Comma-separated policy filter (e.g. 'space_time')")
+                        help="Comma-separated policy filter (e.g. 'space_time'). "
+                             "Oracle ablations (belady, oracle_v1, oracle_v3) "
+                             "run only when named here.")
+    parser.add_argument("--workloads", type=str, default=None,
+                        help="Comma-separated workload filter "
+                             "(default: casual,enterprise,power_user)")
+    parser.add_argument("--predictor", type=str, default="models/logistic_predictor.pkl",
+                        help="Path to the trained predictor. Give each concurrent "
+                             "run its own copy; the default is shared state.")
+    parser.add_argument("--persona-sigma", type=float, default=0.6,
+                        help="Between-user dispersion in return propensity. "
+                             "0.0 makes users identical so per-user features "
+                             "carry no signal; 0.6 is the main study default.")
+    parser.add_argument("--arch", type=str, default="tinyllama",
+                        choices=sorted(MODELS_BY_KEY.keys()),
+                        help="Architecture whose economics price prefill and "
+                             "restore (default: tinyllama)")
+    parser.add_argument("--capacity-mb", type=int, default=500,
+                        help="Total cache capacity in MB, split 10/30/60 "
+                             "across hot/warm/cold (default: 500)")
     parser.add_argument("--azure", action="store_true",
                         help="Replay the Azure LLM inference trace instead of "
                              "synthetic workloads (downloads ~1.1 GB on first use)")
@@ -624,6 +732,8 @@ if __name__ == "__main__":
         run_azure_experiment(
             output_dir=args.output,
             only_policies=args.policies.split(",") if args.policies else None,
+            arch=args.arch,
+            predictor_path=args.predictor,
         )
     else:
         run_full_experiment(
@@ -631,4 +741,9 @@ if __name__ == "__main__":
             seeds=list(range(args.seed_base, args.seed_base + args.seeds)),
             output_dir=args.output,
             only_policies=args.policies.split(",") if args.policies else None,
+            workloads=args.workloads.split(",") if args.workloads else None,
+            capacity_mb=args.capacity_mb,
+            arch=args.arch,
+            persona_sigma=args.persona_sigma,
+            predictor_path=args.predictor,
         )
