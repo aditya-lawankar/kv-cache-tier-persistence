@@ -17,47 +17,58 @@
 *Can a learned eviction policy applied to a three-tier KV cache hierarchy significantly reduce LLM cold-start cost compared to LRU and TTL under realistic multi-session workloads?*
 
 We began with the hypothesis that predictive eviction would beat LRU on **hit rate**. The data
-falsified that hypothesis — and the diagnosis of *why* became the project's actual contribution:
+falsified that hypothesis, and the diagnosis of *why* became the project's actual contribution:
 
-1. **Binary classification eviction loses to LRU under capacity pressure.** Eviction is a
-   Knapsack-style packing problem; predicting P(resume) while ignoring entry size retains
-   large sessions that choke out dozens of small ones.
-2. **Static value-density (Value/Byte) eviction fails even harder on heavy-tailed workloads.**
-   A cache is a dynamic system governed by Little's Law: maximizing value per byte without
-   bounding sojourn time collapses cache cardinality.
-3. **Hit rate is the wrong metric for KV caching.** With O(N²) prefill recompute costs, a
-   policy with a *lower* hit rate can deliver *higher* GPU savings by retaining
-   expensive-to-recompute long-context sessions. The correct objective is **expected cache
-   value**, and hits must be discounted by the restore cost of the tier they come from.
+1. **LRU wins hit rate, and loses on value.** Across every constrained workload LRU has the
+   highest hit rate. Measured in GPU compute actually saved, it delivers the *least* value of
+   any policy tested on enterprise traffic. Ranking by hit rate selects the lowest-value policy.
+2. **Hit rate assumes all hits are worth the same, and KV caching violates that twice.** A hit
+   is worth nothing unless the prefill it avoids exceeds the restore it costs (the break-even
+   length *N\**), and above that threshold savings grow superlinearly with context length.
+3. **The served architecture decides whether the metric is safe.** On a large GQA model where
+   *N\** is 12 tokens, nearly every hit pays and hit rate is an adequate proxy. When the
+   workload straddles *N\**, it is actively misleading.
 
-**Headline results** (500MB tiered cache, 6h simulated, 10 seeds, paired 95% CIs vs LRU
-on identical traces):
+**Headline results** (500MB tiered cache, 6h simulated, 10 seeds, paired 95% CIs vs LRU on
+identical traces, priced at TinyLlama-1.1B economics). Value is GPU-seconds saved per day:
 
-| Policy | Enterprise hit% | Δ$/day vs LRU [CI] | Power-user hit% | Δ$/day vs LRU [CI] |
-|---|---|---|---|---|
-| LRU | **79.2** | — | **96.0** | — |
-| Heuristic | 55.3 | −255 [−312, −199] | 84.2 | **−41 [−60, −22]** |
-| Logistic V1 | 67.9 | −230 [−323, −138] | 83.9 | −214 [−276, −152] |
-| Value Density V2 | 47.9 | −257 [−348, −167] | 71.9 | −202 [−252, −152] |
-| Space-Time V3 | 51.2 | **−163 [−249, −77]** | 74.8 | **−168 [−215, −120]** |
+| Policy | Enterprise hit% | GPU-s/day | ×LRU | Power-user hit% | ×LRU |
+|---|---|---|---|---|---|
+| LRU | **79.1** | 36.8 | 1.00 | **96.0** | 1.00 |
+| Heuristic | 55.3 | 60.7 | 1.65 | 84.2 | 1.08 |
+| Logistic V1 | 67.9 | 63.5 | 1.73 | 83.9 | 0.96 |
+| Value Density V2 | 58.2 | **73.2** | **1.99** | 76.9 | 0.96 |
+| Space-Time V3 | 57.8 | 72.4 | 1.97 | 79.6 | 1.05 |
 
-Three takeaways: **LRU wins everything under honest evaluation** (an earlier buggy harness
-showed the learned policy beating LRU — evaluation bugs preferentially flatter complex
-policies); **hit rate and value decouple** (heuristic keeps 97.5% of LRU's value while
-conceding 12 hit-rate points; V1 beats V3 on hits but loses to it on dollars); and
-**lifetime normalization works** (V3 recovers +$94/day over static V2, CI [+77, +112]).
+All enterprise deltas are significant. Power-user sessions sit far above *N\**, so nearly every
+hit is valuable there and the two metrics reconverge, which is exactly what the mechanism predicts.
 
-**Real-trace replication** (Azure LLM inference trace, one week of production arrivals,
-ten 6-hour windows as paired replicates): every finding holds. LRU wins both metrics
-(83.9% hit rate, all paired deltas significant), the hit-rate/value inversion is *stronger*
-than on synthetic workloads (Logistic V1 beats Space-Time V3 by 18.9 hit points yet
-delivers $105/day *less* value, CI [+77, +133] in V3's favor), and V3 recovers +$78/day
-over static V2 (CI [+61, +95]). Replays real arrival timestamps and request sizes;
-session return behavior is modeled (the public trace has no conversation identifiers —
-see `benchmarks/azure_trace_loader.py` for the permutation-control evidence). Regenerate
-via `make reproduce-azure` (downloads ~1.1 GB on first use).
+**A correction worth reading.** Earlier versions of this README reported that LRU won *both*
+metrics and that static value-density eviction "collapsed." Both claims came from a cost model
+that contained no model architecture: it priced prefill with two hardcoded constants whose
+linear/quadratic crossover sat an order of magnitude away from any real transformer, inflating
+a long session's worth relative to a short one by 3–4.5×. It has been replaced with the same
+physics the break-even analysis uses (`src/kv_cache_tier/utils/hardware.py`), validated to within
+2× of measured GPU prefill latency. The paper documents both this and an earlier, opposite-signed
+harness bug.
 
-All numbers regenerate via `make reproduce` — see `benchmarks/experiment_runner.py`,
+**Real-trace replication** (Azure LLM inference trace, one week of production arrivals, ten
+6-hour windows as paired replicates): both halves replicate and the inversion strengthens. LRU
+again wins hit rate (83.9%) and again delivers the least value (32.1 GPU-s/day); Value Density V2
+saves 2.18× as much (70.0), Logistic V1 1.84×, all significant, with the learned policies running
+zero-shot on traffic they never trained on. Replays real arrival timestamps and request sizes;
+session return behavior is modeled, since the public trace has no conversation identifiers (see
+`benchmarks/azure_trace_loader.py` for the permutation-control evidence). Regenerate via
+`make reproduce-azure` (downloads ~1.1 GB on first use).
+
+**Robustness.** A ground-truth oracle ablation shows two clairvoyant policies with *identical*
+100.0% hit rates still differ significantly in delivered value, because tier placement decides
+what a hit is worth. A persona-strength sweep varies how predictable the simulated world is
+(AUC 0.659 to 0.739, retraining at each setting): the learned policy's standing depends on that
+choice, the metric finding does not.
+
+All numbers regenerate via `make reproduce` and `make reproduce-arch` — see
+`benchmarks/experiment_runner.py`,
 `benchmarks/results/experiment_results_v3_aggregate.json`, and
 `benchmarks/results/experiment_results_azure_aggregate.json`.
 
@@ -66,9 +77,10 @@ All numbers regenerate via `make reproduce` — see `benchmarks/experiment_runne
 ## 📄 Research Paper
 
 **[Hit Rate Is Not Value: A Rigorous Evaluation of Learned and Value-Aware Eviction for
-Tiered LLM KV-Cache Persistence](paper.pdf)** — 7-page USENIX-style paper covering the
-system design, the V1→V2→V3 eviction-policy progression, the statistical methodology,
-the break-even analysis, and the TinyLlama end-to-end validation. LaTeX sources in
+Tiered LLM KV-Cache Persistence](paper.pdf)** — USENIX-style paper covering the system
+design, the V1→V2→V3 eviction-policy progression, the statistical methodology, the
+break-even analysis across model architectures, the oracle and persona ablations, and
+the TinyLlama end-to-end validation. LaTeX sources in
 [`paper/latex/`](paper/latex/); every number and figure regenerates from the committed
 result JSONs (`make reproduce`).
 
@@ -148,12 +160,13 @@ The project evaluates a progression of eviction policies:
   pressure*: classification ignores entry size (the Knapsack mismatch).
 - **V2 (Value Density):** maximizes expected GPU savings per cached byte,
   P(resume) × RecomputeCost(N) / Size(N), with an optional admission-control gate.
-  *Fails on heavy-tailed workloads*: static packing ignores sojourn time
-  (the Little's Law collapse).
+  *Delivers the most value on enterprise traffic* under architecture-correct pricing,
+  trading cardinality for value deliberately.
 - **V3 (Space-Time Density):** divides value density by expected sojourn
   time E[Δt] (estimated from an EMA of observed inter-access gaps), charging
-  each entry for the space-time volume it occupies — an LHD-style objective
-  adapted to quadratic recompute costs. Implemented in
+  each entry for the space-time volume it occupies, an LHD-style objective
+  adapted to quadratic recompute costs. Beats V2 significantly only under high
+  size variance, where hoarding is a real risk. Implemented in
   `src/kv_cache_tier/eviction/space_time.py`.
 
 Features engineered for the P(resume) models:
@@ -307,6 +320,71 @@ window's converted workload without running experiments:
 
 ```bash
 python benchmarks/azure_trace_loader.py --window 3
+```
+
+### Running the oracle ablation (ground-truth policies)
+
+**Why:** when a learned policy loses to LRU, is the bottleneck the *predictor* or the
+*objective*? These policies replay the same traces with the trace's actual future:
+`belady` (evict farthest next access — the classical hit-rate oracle), `oracle_v1`
+(V1's objective with a perfect classifier), and `oracle_v3` (V3's objective with perfect
+P(resume) and the exact next-access gap — a value-weighted greedy Belady). Legitimate
+only in open-loop replay, where arrivals do not depend on cache behavior.
+See `src/kv_cache_tier/eviction/oracle.py`.
+
+```bash
+make reproduce-oracle
+# sharded across 5 processes (seeds 42-51, ~2 per shard), then merged:
+for base in 42 44 46 48 50; do
+  python benchmarks/experiment_runner.py --duration 0.25 --seeds 2 --seed-base $base \
+    --workloads enterprise,power_user --policies lru,belady,oracle_v1,oracle_v3 \
+    --output benchmarks/results/oracle_shards/shard_$base &
+done
+wait
+python benchmarks/merge_results.py --prefix oracle \
+  benchmarks/results/oracle_shards/*/experiment_results_v3_raw.json
+```
+
+### Running the capacity regime sweep
+
+**Why:** any single-capacity study implicitly picks a winner. This sweeps total capacity
+from 125 MB to 2 GB (same 10/30/60 tier split, enterprise workload, 5 paired seeds per
+point) for the three deployable policies and the three oracles, producing the regime map
+in Figure 5: LRU wins at moderate pressure, value-aware eviction wins under severe
+scarcity, and even clairvoyant policies trade hit rate for value once capacity binds.
+
+```bash
+make reproduce-capacity
+```
+
+### Running the persona strength sweep
+
+**Why:** the resumption signal in the synthetic workloads is generated, so the
+predictor's AUC is partly a property of the generator. This sweeps the parameter that
+controls how much users differ from one another, retrains the predictor at each setting
+so the model is as good as that world permits, and re-runs the enterprise matrix. It
+separates the conclusion that depends on that modeling choice (whether learned eviction
+is worth building) from the one that does not (whether hit rate is the right target).
+
+```bash
+make reproduce-persona
+```
+
+Each sigma writes its own predictor, so the three settings can also be run in parallel
+by passing `--predictor <path>` to the runner. Note that a shared
+`models/logistic_predictor.pkl` is what the main study loads by default; give
+concurrent runs their own copies rather than overwriting it.
+
+### Running the compression benchmark (real KV bytes)
+
+**Why:** the simulator's tensors are zero-filled, so compression claims must be measured
+on real model output. This runs a real TinyLlama prefill, serializes the cache with the
+repo's warm-tier format, and benchmarks LZ4/Zstandard/zlib on those exact bytes,
+reporting ratios, codec latencies, and effective transfer times at the modeled tier
+bandwidths.
+
+```bash
+make bench-compression
 ```
 
 ### Validating on a real model (TinyLlama-1.1B, CPU)

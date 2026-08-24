@@ -109,33 +109,104 @@ stateDiagram-v2
 
 ## 4. Eviction Policy Framework
 
-The `EvictionPolicy` abstraction isolates the decision logic from the storage mechanisms.
+`EvictionPolicy` (`src/kv_cache_tier/eviction/base.py`) isolates victim selection from the
+storage mechanism. All policies read time through an injected `Clock`, so trace-driven
+experiments run on simulated time rather than wall-clock time.
 
-### Predictive Eviction Mathematics
-The Predictive policy calculates a score for every entry $i$:
+| Policy | Module | Victim rule | Reads cost model? |
+|---|---|---|---|
+| LRU | `lru.py` | Least recently accessed | No |
+| TTL | `ttl.py` | Expired first, else LRU | No |
+| Heuristic | `predictive.py` | Lowest `0.4f + 0.4r + 0.2v` | No |
+| Logistic V1 | `predictive.py` | Lowest `P(resume)` | No |
+| Value Density V2 | `value_density.py` | Lowest `P(resume)·cost(N)/bytes` | **Yes** |
+| Space-Time V3 | `space_time.py` | Lowest `P(resume)·cost(N)/(bytes·E[Δt])` | **Yes** |
+| Bélády / Oracle V1 / Oracle V3 | `oracle.py` | Ground truth from the replayed trace | V3 only |
 
-$$ Score_i = \alpha \cdot \left(\frac{freq_i}{freq_{max}}\right) + \beta \cdot e^{-\frac{t_{now} - t_{access}}{t_{half}}} + \gamma \cdot \left(\frac{tokens_i}{tokens_{max}}\right) $$
+The "reads cost model" column is load-bearing. Policies that consume the cost model change
+*behavior* when it changes, so a re-pricing requires re-simulating them; the others can be
+re-priced from logged hit histograms alone (see §7).
 
-Where:
-- $\alpha, \beta, \gamma$ are configurable weights (summing to 1.0)
-- $t_{half}$ is the decay half-life (e.g., 30 minutes)
-- The policy evicts the entry with the **lowest** score.
+### Heuristic scoring
 
-## 5. Performance Model
+$$ Score_i = \alpha \cdot \frac{freq_i}{freq_{max}} + \beta \cdot e^{-\frac{t_{now} - t_{access}}{t_{half}}} + \gamma \cdot \frac{tokens_i}{tokens_{max}} $$
 
-Based on hardware capabilities, expected transfer times for a 256MB KV Cache:
+with $\alpha=0.4$, $\beta=0.4$, $\gamma=0.2$ and $t_{half}=30$ min. Lowest score is evicted.
 
-| Transfer Path | Method | Expected Latency | Bottleneck |
-|---------------|--------|------------------|------------|
-| Hot ↔ CPU | PCIe Gen4 x16 | ~10-20 ms | PCIe Bus (25GB/s) |
-| CPU ↔ Warm | NVMe Sequential | ~30-50 ms | NVMe Write (7GB/s) |
-| Warm ↔ Cold | 10Gbps Network | ~250-500 ms | Network Bandwidth |
-| Serialize | safetensors | ~5 ms | CPU Memory Bandwidth |
-| Compress | LZ4 | ~75 ms | CPU Compute (~3.5GB/s) |
+### Oracle policies
 
-*Note: In this standalone prototype, Hot ↔ CPU is simulated as memory ↔ memory.*
+`oracle.py` provides clairvoyant baselines for ablation. They index the replayed event list
+to answer "when is this session next accessed?", which is legitimate only because replay is
+open-loop: arrivals never depend on cache behavior. They are excluded from the default
+matrix and must be named explicitly via `--policies`.
 
-## 6. vLLM Integration Guide
+## 5. Cost Model
+
+`src/kv_cache_tier/utils/cost_model.py` prices what a hit is worth, parameterized by a
+`ModelSpec` and `GPUSpec` from `src/kv_cache_tier/utils/hardware.py`. Both the simulator and
+`benchmarks/breakeven_analysis.py` import from that one module so the two cannot diverge.
+
+$$ t_{prefill}(N) = \frac{2PN + 4 L H_q d N^2}{F \cdot \eta} \qquad t_{restore}(N) = \ell_{tier} + \frac{2 L H_{kv} d b N}{B_{tier}} $$
+
+A hit is credited `max(t_prefill - t_restore, 0)`. The floor matters: whether a hit is worth
+anything at all depends on the served architecture, through the break-even length $N^*$.
+
+| Model | KV/token | $N^*$ (NVMe) | $N^*$ (S3) |
+|---|---|---|---|
+| TinyLlama-1.1B (GQA 4/32) | 22 KB | 1,561 | 25,901 |
+| Llama-2-7B (MHA 32/32) | 512 KB | 43,559 | 254,203 |
+| Llama-2-70B (GQA 8/64) | 320 KB | 12 | 289 |
+
+**This module previously had no architecture in it.** It priced prefill with two hardcoded
+constants whose linear/quadratic crossover sat near 1,300 tokens, where real transformers
+cross between 12k and 53k. That inflated a long session's worth relative to a short one by
+3–4.5x and inverted the study's headline conclusion. It is now covered by
+`tests/test_cost_model.py`, including a check that predictions land within 2x of measured
+GPU prefill latency, and that its $N^*$ values match the break-even analysis exactly.
+
+### Scale model
+
+The simulator serializes a downscaled geometry (2 layers, 2 heads, head_dim 32, FP16 =
+512 bytes/token) so traces fit in memory, while pricing value and restore at the target
+architecture. The two views are reconciled by holding the session-count-to-capacity ratio
+fixed: a 500 MB simulated cache stands in for a `500 MB x (kv_bytes_per_token / 512)` cache
+at the target architecture. Capacity dynamics are simulated; economics are real.
+
+## 6. Storage Performance Model
+
+Modeled tier characteristics (`hardware.py`), used for both restore cost and the break-even
+analysis:
+
+| Tier | Latency | Bandwidth |
+|---|---|---|
+| Hot (VRAM-resident) | 0.1 ms | pointer swap |
+| Warm (NVMe) | 10 ms | 2 GB/s |
+| Cold (object storage) | 100 ms | 500 MB/s |
+
+**Compression is not used.** Measured on real serialized TinyLlama KV tensors
+(`benchmarks/compression_benchmark.py`), the best general-purpose codec achieves 1.10x
+(Zstd; LZ4 1.01x), and every codec makes cold-tier restore *slower* than sending raw bytes.
+FP16 mantissas are close to incompressible for byte-oriented codecs. Format-aware KV codecs
+are the alternative; see the paper's related work.
+
+## 7. Reproduction Tooling
+
+| Script | Purpose |
+|---|---|
+| `benchmarks/experiment_runner.py` | The matrix. Flags: `--arch`, `--capacity-mb`, `--persona-sigma`, `--predictor`, `--policies`, `--workloads`, `--azure` |
+| `benchmarks/rescore_results.py` | Re-price finished runs at another architecture from logged hit histograms. Refuses cost-model-bound policies |
+| `benchmarks/make_paper_tables.py` | Raw shards to console tables plus LaTeX bodies |
+| `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |
+| `benchmarks/compression_benchmark.py` | LZ4/Zstd/zlib on real KV bytes |
+| `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates |
+| `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab) |
+
+Each run logs a `hit_histogram` over `(cached_tokens, tier)`, which is a sufficient statistic
+for re-pricing without re-simulating. `make` targets: `reproduce`, `reproduce-arch`,
+`reproduce-azure`, `reproduce-oracle`, `reproduce-capacity`, `reproduce-persona`,
+`bench-compression`, `arxiv`.
+
+## 8. vLLM Integration Guide
 
 To deploy this in a real vLLM environment:
 
