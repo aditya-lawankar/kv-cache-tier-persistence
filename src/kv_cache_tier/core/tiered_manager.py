@@ -29,9 +29,14 @@ class TieredCacheManager:
     experiments can run on simulated time (see utils/clock.py).
     """
 
-    def __init__(self, config: SystemConfig, clock: Optional[Clock] = None):
+    def __init__(self, config: SystemConfig, clock: Optional[Clock] = None,
+                 cost_model=None):
         self.config = config
         self.clock = clock or SystemClock()
+        # Value-aware policies (V2/V3) price recompute through this model, so
+        # it must be the SAME instance the experiment scores hits with, or the
+        # policies optimize a different objective than the one being measured.
+        self.cost_model = cost_model
 
         # Initialize tiers
         self.hot_tier = HotTier(config.tiers.hot_capacity_mb * 1024 * 1024)
@@ -65,7 +70,8 @@ class TieredCacheManager:
             },
             alpha=config.eviction.predictive_alpha,
             beta=config.eviction.predictive_beta,
-            gamma=config.eviction.predictive_gamma
+            gamma=config.eviction.predictive_gamma,
+            cost_model=cost_model,
         )
         self.eviction_policy.set_clock(self.clock)
 

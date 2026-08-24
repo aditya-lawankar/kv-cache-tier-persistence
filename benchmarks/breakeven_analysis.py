@@ -25,6 +25,12 @@ import os
 import json
 from dataclasses import dataclass
 
+import sys
+
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -47,45 +53,13 @@ plt.rcParams.update({
 # Hardware / model / storage parameterization
 # ──────────────────────────────────────────────────────────────────
 
-@dataclass
-class ModelSpec:
-    name: str
-    params_b: float          # billions of parameters
-    layers: int
-    q_heads: int             # attention (query) heads — drive attention FLOPs
-    kv_heads: int            # KV heads (GQA) — drive cache size
-    head_dim: int
+# Model/GPU/storage specs are shared with the simulator's cost model so the
+# break-even analysis and the value accounting can never diverge.
+from src.kv_cache_tier.utils.hardware import (  # noqa: E402
+    ModelSpec, GPUSpec, StorageSpec, MODELS, A100, NVME, OBJECT_STORE,
+)
 
-    def kv_bytes_per_token(self, bytes_per_elem: int = 2) -> int:
-        return 2 * self.layers * self.kv_heads * self.head_dim * bytes_per_elem
-
-
-MODELS = [
-    ModelSpec("TinyLlama-1.1B", 1.1, layers=22, q_heads=32, kv_heads=4,  head_dim=64),
-    ModelSpec("Llama-2-7B",     7.0, layers=32, q_heads=32, kv_heads=32, head_dim=128),
-    ModelSpec("Llama-2-70B",   70.0, layers=80, q_heads=64, kv_heads=8,  head_dim=128),
-]
-
-@dataclass
-class GPUSpec:
-    name: str
-    peak_flops: float        # dense FP16/BF16 FLOP/s
-    mfu: float               # achievable model FLOPs utilization during prefill
-
-
-A100 = GPUSpec("A100 80GB", 312e12, mfu=0.45)
-
-@dataclass
-class StorageSpec:
-    name: str
-    latency_s: float
-    bandwidth_bytes_s: float
-
-
-STORAGE_TIERS = [
-    StorageSpec("NVMe (warm)",     0.010, 2e9),
-    StorageSpec("S3/MinIO (cold)", 0.100, 500e6),
-]
+STORAGE_TIERS = [NVME, OBJECT_STORE]
 
 
 # ──────────────────────────────────────────────────────────────────

@@ -24,12 +24,14 @@ def create_eviction_policy(name: str, **kwargs) -> EvictionPolicy:
         )
     elif name == "value_density":
         return ValueDensityPolicy(
-            admission_threshold=kwargs.get("admission_threshold", 0.0)
+            admission_threshold=kwargs.get("admission_threshold", 0.0),
+            cost_model=kwargs.get("cost_model"),
         )
     elif name == "space_time":
         return SpaceTimeDensityPolicy(
             prior_gap_seconds=kwargs.get("prior_gap_seconds", 2 * 3600.0),
             ema_alpha=kwargs.get("ema_alpha", 0.3),
+            cost_model=kwargs.get("cost_model"),
         )
     else:
         raise ValueError(f"Unknown eviction policy: {name}")
