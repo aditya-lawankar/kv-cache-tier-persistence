@@ -1,0 +1,230 @@
+[
+  {
+    "policy": "lru",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.7915,
+    "hit_rate_ci95": [
+      0.7588,
+      0.8242
+    ],
+    "cost_saved_per_day_mean": 0.03,
+    "cost_saved_per_day_ci95": [
+      0.0223,
+      0.0297
+    ],
+    "hits_by_tier_mean": {
+      "hot": 39.7,
+      "warm": 385.8,
+      "cold": 811.5
+    },
+    "delta_cost_vs_lru_mean": null,
+    "delta_cost_vs_lru_ci95": null,
+    "delta_hit_rate_vs_lru_mean": null,
+    "delta_hit_rate_vs_lru_ci95": null
+  },
+  {
+    "policy": "belady",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.14,
+    "cost_saved_per_day_ci95": [
+      0.1412,
+      0.1488
+    ],
+    "hits_by_tier_mean": {
+      "hot": 641.5,
+      "warm": 697.0,
+      "cold": 228.0
+    },
+    "delta_cost_vs_lru_mean": 0.12,
+    "delta_cost_vs_lru_ci95": [
+      0.1149,
+      0.1231
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.2085,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.1758,
+      0.2412
+    ]
+  },
+  {
+    "policy": "oracle_v1",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.14,
+    "cost_saved_per_day_ci95": [
+      0.1412,
+      0.1488
+    ],
+    "hits_by_tier_mean": {
+      "hot": 641.5,
+      "warm": 697.0,
+      "cold": 228.0
+    },
+    "delta_cost_vs_lru_mean": 0.12,
+    "delta_cost_vs_lru_ci95": [
+      0.1149,
+      0.1231
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.2085,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.1758,
+      0.2412
+    ]
+  },
+  {
+    "policy": "oracle_v3",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.15,
+    "cost_saved_per_day_ci95": [
+      0.1435,
+      0.1525
+    ],
+    "hits_by_tier_mean": {
+      "hot": 603.6,
+      "warm": 682.2,
+      "cold": 280.7
+    },
+    "delta_cost_vs_lru_mean": 0.12,
+    "delta_cost_vs_lru_ci95": [
+      0.1175,
+      0.1265
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.2085,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.1758,
+      0.2412
+    ]
+  },
+  {
+    "policy": "lru",
+    "workload": "power_user",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.9603,
+    "hit_rate_ci95": [
+      0.952,
+      0.9687
+    ],
+    "cost_saved_per_day_mean": 0.03,
+    "cost_saved_per_day_ci95": [
+      0.0295,
+      0.0365
+    ],
+    "hits_by_tier_mean": {
+      "hot": 27.6,
+      "warm": 151.2,
+      "cold": 102.2
+    },
+    "delta_cost_vs_lru_mean": null,
+    "delta_cost_vs_lru_ci95": null,
+    "delta_hit_rate_vs_lru_mean": null,
+    "delta_hit_rate_vs_lru_ci95": null
+  },
+  {
+    "policy": "belady",
+    "workload": "power_user",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.09,
+    "cost_saved_per_day_ci95": [
+      0.0791,
+      0.0929
+    ],
+    "hits_by_tier_mean": {
+      "hot": 204.3,
+      "warm": 88.5,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.05,
+    "delta_cost_vs_lru_ci95": [
+      0.0462,
+      0.0598
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.0397,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.0313,
+      0.048
+    ]
+  },
+  {
+    "policy": "oracle_v1",
+    "workload": "power_user",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.09,
+    "cost_saved_per_day_ci95": [
+      0.0791,
+      0.0929
+    ],
+    "hits_by_tier_mean": {
+      "hot": 204.3,
+      "warm": 88.5,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.05,
+    "delta_cost_vs_lru_ci95": [
+      0.0462,
+      0.0598
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.0397,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.0313,
+      0.048
+    ]
+  },
+  {
+    "policy": "oracle_v3",
+    "workload": "power_user",
+    "n_seeds": 10,
+    "hit_rate_mean": 1.0,
+    "hit_rate_ci95": [
+      1.0,
+      1.0
+    ],
+    "cost_saved_per_day_mean": 0.09,
+    "cost_saved_per_day_ci95": [
+      0.0791,
+      0.0929
+    ],
+    "hits_by_tier_mean": {
+      "hot": 190.1,
+      "warm": 102.7,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.05,
+    "delta_cost_vs_lru_ci95": [
+      0.0462,
+      0.0598
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.0397,
+    "delta_hit_rate_vs_lru_ci95": [
+      0.0313,
+      0.048
+    ]
+  }
+]

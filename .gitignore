@@ -18,6 +18,11 @@ benchmarks/results/*
 !benchmarks/results/tinyllama_integration_results.json
 !benchmarks/results/tinyllama_gpu_results.json
 !benchmarks/results/tinyllama_gpu_sweep.json
+!benchmarks/results/experiment_results_oracle_aggregate.json
+!benchmarks/results/experiment_results_capacity_aggregate.json
+!benchmarks/results/experiment_results_persona_aggregate.json
+!benchmarks/results/compression_benchmark.json
+!benchmarks/results/paper_tables_corrected.json
 
 # LaTeX build artifacts (paper.pdf at repo root is committed deliberately)
 paper/latex/*.aux

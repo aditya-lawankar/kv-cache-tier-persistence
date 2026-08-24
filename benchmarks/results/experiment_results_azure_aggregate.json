@@ -8,10 +8,10 @@
       0.8096,
       0.868
     ],
-    "cost_saved_per_day_mean": 2465.4,
+    "cost_saved_per_day_mean": 0.02,
     "cost_saved_per_day_ci95": [
-      2360.4255,
-      2570.3685
+      0.0187,
+      0.0233
     ],
     "hits_by_tier_mean": {
       "hot": 62.2,
@@ -32,20 +32,20 @@
       0.5839,
       0.6338
     ],
-    "cost_saved_per_day_mean": 2282.75,
+    "cost_saved_per_day_mean": 0.04,
     "cost_saved_per_day_ci95": [
-      2158.6075,
-      2406.8945
+      0.0323,
+      0.0397
     ],
     "hits_by_tier_mean": {
       "hot": 67.7,
       "warm": 382.1,
       "cold": 968.6
     },
-    "delta_cost_vs_lru_mean": -182.65,
+    "delta_cost_vs_lru_mean": 0.01,
     "delta_cost_vs_lru_ci95": [
-      -230.5017,
-      -134.7903
+      0.0112,
+      0.0188
     ],
     "delta_hit_rate_vs_lru_mean": -0.23,
     "delta_hit_rate_vs_lru_ci95": [
@@ -62,20 +62,20 @@
       0.7275,
       0.7477
     ],
-    "cost_saved_per_day_mean": 2188.19,
+    "cost_saved_per_day_mean": 0.04,
     "cost_saved_per_day_ci95": [
-      2061.3103,
-      2315.0737
+      0.0387,
+      0.0433
     ],
     "hits_by_tier_mean": {
       "hot": 266.9,
       "warm": 691.6,
       "cold": 761.0
     },
-    "delta_cost_vs_lru_mean": -277.21,
+    "delta_cost_vs_lru_mean": 0.02,
     "delta_cost_vs_lru_ci95": [
-      -321.5571,
-      -232.8529
+      0.02,
+      0.02
     ],
     "delta_hit_rate_vs_lru_mean": -0.1012,
     "delta_hit_rate_vs_lru_ci95": [
@@ -87,90 +87,90 @@
     "policy": "value_density",
     "workload": "azure_conv",
     "n_seeds": 10,
-    "hit_rate_mean": 0.4967,
+    "hit_rate_mean": 0.6698,
     "hit_rate_ci95": [
-      0.477,
-      0.5165
+      0.6474,
+      0.6921
     ],
-    "cost_saved_per_day_mean": 2215.1,
+    "cost_saved_per_day_mean": 0.05,
     "cost_saved_per_day_ci95": [
-      2091.5798,
-      2338.6142
+      0.0467,
+      0.0513
     ],
     "hits_by_tier_mean": {
-      "hot": 73.2,
-      "warm": 337.1,
-      "cold": 747.9
+      "hot": 91.2,
+      "warm": 463.4,
+      "cold": 1006.3
     },
-    "delta_cost_vs_lru_mean": -250.3,
+    "delta_cost_vs_lru_mean": 0.03,
     "delta_cost_vs_lru_ci95": [
-      -299.2598,
-      -201.3402
+      0.025,
+      0.031
     ],
-    "delta_hit_rate_vs_lru_mean": -0.3421,
+    "delta_hit_rate_vs_lru_mean": -0.169,
     "delta_hit_rate_vs_lru_ci95": [
-      -0.3614,
-      -0.3228
+      -0.1856,
+      -0.1525
     ]
   },
   {
     "policy": "value_density_ac",
     "workload": "azure_conv",
     "n_seeds": 10,
-    "hit_rate_mean": 0.495,
+    "hit_rate_mean": 0.6676,
     "hit_rate_ci95": [
-      0.4757,
-      0.5143
+      0.6451,
+      0.69
     ],
-    "cost_saved_per_day_mean": 2214.27,
+    "cost_saved_per_day_mean": 0.04,
     "cost_saved_per_day_ci95": [
-      2090.6428,
-      2337.9032
+      0.0403,
+      0.0477
     ],
     "hits_by_tier_mean": {
-      "hot": 65.6,
-      "warm": 237.8,
-      "cold": 850.8
+      "hot": 83.6,
+      "warm": 374.5,
+      "cold": 1097.5
     },
-    "delta_cost_vs_lru_mean": -251.12,
+    "delta_cost_vs_lru_mean": 0.02,
     "delta_cost_vs_lru_ci95": [
-      -300.4677,
-      -201.7803
+      0.0195,
+      0.0265
     ],
-    "delta_hit_rate_vs_lru_mean": -0.3438,
+    "delta_hit_rate_vs_lru_mean": -0.1713,
     "delta_hit_rate_vs_lru_ci95": [
-      -0.3638,
-      -0.3239
+      -0.188,
+      -0.1545
     ]
   },
   {
     "policy": "space_time",
     "workload": "azure_conv",
     "n_seeds": 10,
-    "hit_rate_mean": 0.5481,
+    "hit_rate_mean": 0.6884,
     "hit_rate_ci95": [
-      0.528,
-      0.5683
+      0.6584,
+      0.7184
     ],
-    "cost_saved_per_day_mean": 2293.29,
+    "cost_saved_per_day_mean": 0.04,
     "cost_saved_per_day_ci95": [
-      2163.7927,
-      2422.7933
+      0.0395,
+      0.0465
     ],
     "hits_by_tier_mean": {
-      "hot": 95.3,
-      "warm": 443.0,
-      "cold": 740.5
+      "hot": 134.7,
+      "warm": 549.8,
+      "cold": 919.4
     },
-    "delta_cost_vs_lru_mean": -172.1,
+    "delta_cost_vs_lru_mean": 0.02,
     "delta_cost_vs_lru_ci95": [
-      -222.3836,
-      -121.8244
+      0.019,
+      0.025
     ],
-    "delta_hit_rate_vs_lru_mean": -0.2907,
+    "delta_hit_rate_vs_lru_mean": -0.1504,
     "delta_hit_rate_vs_lru_ci95": [
-      -0.3073,
-      -0.2741
+      -0.167,
+      -0.1338
     ]
   }
 ]

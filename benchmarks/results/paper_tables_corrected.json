@@ -1,0 +1,812 @@
+[
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.792,
+    "val_ci": [
+      0.5888587905975212,
+      0.9951412094024789
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.792,
+    "val_ci": [
+      0.5888587905975212,
+      0.9951412094024789
+    ],
+    "delta": 0.0,
+    "delta_ci": [
+      0.0,
+      0.0
+    ],
+    "ratio": 1.0,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.792,
+    "val_ci": [
+      0.5888587905975212,
+      0.9951412094024789
+    ],
+    "delta": 0.0,
+    "delta_ci": [
+      0.0,
+      0.0
+    ],
+    "ratio": 1.0,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.792,
+    "val_ci": [
+      0.5888587905975212,
+      0.9951412094024789
+    ],
+    "delta": 0.0,
+    "delta_ci": [
+      0.0,
+      0.0
+    ],
+    "ratio": 1.0,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.036000000000000004,
+    "val_ci": [
+      -0.04543765786274759,
+      0.1174376578627476
+    ],
+    "delta": -0.756,
+    "delta_ci": [
+      -0.9460212016797444,
+      -0.5659787983202557
+    ],
+    "ratio": 0.045454545454545456,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "casual",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 0.792,
+    "val_ci": [
+      0.5888587905975212,
+      0.9951412094024789
+    ],
+    "delta": 0.0,
+    "delta_ci": [
+      0.0,
+      0.0
+    ],
+    "ratio": 1.0,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 0.79149,
+    "hit_ci": [
+      0.7588270224895878,
+      0.8241529775104123
+    ],
+    "val_mean": 36.792,
+    "val_ci": [
+      34.76494560586836,
+      38.81905439413164
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 0.5527000000000001,
+    "hit_ci": [
+      0.5317241654117825,
+      0.5736758345882177
+    ],
+    "val_mean": 60.65999999999999,
+    "val_ci": [
+      58.03581968682921,
+      63.28418031317077
+    ],
+    "delta": 23.867999999999995,
+    "delta_ci": [
+      20.784700533221837,
+      26.951299466778153
+    ],
+    "ratio": 1.6487279843444222,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 0.67896,
+    "hit_ci": [
+      0.6678186775734474,
+      0.6901013224265526
+    ],
+    "val_mean": 63.467999999999996,
+    "val_ci": [
+      61.36161218502962,
+      65.57438781497038
+    ],
+    "delta": 26.676,
+    "delta_ci": [
+      23.086065629589772,
+      30.265934370410225
+    ],
+    "ratio": 1.7250489236790605,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 0.58174,
+    "hit_ci": [
+      0.5661486033599593,
+      0.5973313966400408
+    ],
+    "val_mean": 73.188,
+    "val_ci": [
+      68.41611150191306,
+      77.95988849808694
+    ],
+    "delta": 36.396,
+    "delta_ci": [
+      30.360754618732265,
+      42.431245381267736
+    ],
+    "ratio": 1.9892367906066537,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 0.5819099999999999,
+    "hit_ci": [
+      0.5665748860734926,
+      0.5972451139265073
+    ],
+    "val_mean": 68.4,
+    "val_ci": [
+      63.50018638438409,
+      73.29981361561593
+    ],
+    "delta": 31.607999999999997,
+    "delta_ci": [
+      25.505546875014243,
+      37.710453124985754
+    ],
+    "ratio": 1.8590998043052838,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "enterprise",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 0.5783500000000001,
+    "hit_ci": [
+      0.5575212426053695,
+      0.5991787573946308
+    ],
+    "val_mean": 72.36,
+    "val_ci": [
+      69.4845855648298,
+      75.2354144351702
+    ],
+    "delta": 35.568,
+    "delta_ci": [
+      31.49105302384464,
+      39.64494697615535
+    ],
+    "ratio": 1.9667318982387474,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 0.9603300000000001,
+    "hit_ci": [
+      0.9519687830011503,
+      0.96869121699885
+    ],
+    "val_mean": 48.16799999999999,
+    "val_ci": [
+      44.65829833734912,
+      51.67770166265086
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 0.84155,
+    "hit_ci": [
+      0.8187842542722543,
+      0.8643157457277457
+    ],
+    "val_mean": 51.912,
+    "val_ci": [
+      46.6247506984056,
+      57.1992493015944
+    ],
+    "delta": 3.743999999999999,
+    "delta_ci": [
+      0.7255532517340968,
+      6.762446748265901
+    ],
+    "ratio": 1.0777279521674141,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 0.83879,
+    "hit_ci": [
+      0.8136731850449489,
+      0.8639068149550512
+    ],
+    "val_mean": 46.152,
+    "val_ci": [
+      41.65232886338917,
+      50.65167113661083
+    ],
+    "delta": -2.0160000000000005,
+    "delta_ci": [
+      -5.090084313949101,
+      1.0580843139491005
+    ],
+    "ratio": 0.9581464872944695,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 0.7691,
+    "hit_ci": [
+      0.7458120103297581,
+      0.7923879896702419
+    ],
+    "val_mean": 46.476,
+    "val_ci": [
+      41.74692487672343,
+      51.205075123276565
+    ],
+    "delta": -1.6920000000000002,
+    "delta_ci": [
+      -5.001238263610984,
+      1.6172382636109832
+    ],
+    "ratio": 0.9648729446935727,
+    "sig": false
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 0.76867,
+    "hit_ci": [
+      0.7459588721520027,
+      0.7913811278479972
+    ],
+    "val_mean": 38.88,
+    "val_ci": [
+      33.56883266353343,
+      44.19116733646658
+    ],
+    "delta": -9.288,
+    "delta_ci": [
+      -13.43839202103368,
+      -5.1376079789663205
+    ],
+    "ratio": 0.8071748878923769,
+    "sig": true
+  },
+  {
+    "arch": "TinyLlama-1.1B",
+    "workload": "power_user",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 0.7955300000000001,
+    "hit_ci": [
+      0.7725486888355098,
+      0.8185113111644904
+    ],
+    "val_mean": 50.688,
+    "val_ci": [
+      44.853465576119895,
+      56.52253442388011
+    ],
+    "delta": 2.520000000000001,
+    "delta_ci": [
+      -1.5986669979533645,
+      6.638666997953367
+    ],
+    "ratio": 1.0523168908819136,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 48.384,
+    "val_ci": [
+      34.28736332881659,
+      62.48063667118341
+    ],
+    "delta": 0.07200000000000024,
+    "delta_ci": [
+      -0.1939742768147804,
+      0.33797427681478087
+    ],
+    "ratio": 1.0014903129657229,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 14.508,
+    "val_ci": [
+      7.907529325551224,
+      21.108470674448775
+    ],
+    "delta": -33.804,
+    "delta_ci": [
+      -42.18715767355892,
+      -25.420842326441083
+    ],
+    "ratio": 0.30029806259314457,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 48.384,
+    "val_ci": [
+      34.28736332881659,
+      62.48063667118341
+    ],
+    "delta": 0.07200000000000024,
+    "delta_ci": [
+      -0.1939742768147804,
+      0.33797427681478087
+    ],
+    "ratio": 1.0014903129657229,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 0.6707,
+    "hit_ci": [
+      0.659447021780933,
+      0.681952978219067
+    ],
+    "val_mean": 8721.936,
+    "val_ci": [
+      8417.635529452058,
+      9026.236470547941
+    ],
+    "delta": 548.5680000000004,
+    "delta_ci": [
+      226.93532715196238,
+      870.2006728480385
+    ],
+    "ratio": 1.0671165179397282,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 0.6705300000000001,
+    "hit_ci": [
+      0.6594523544710187,
+      0.6816076455289815
+    ],
+    "val_mean": 8334.143999999998,
+    "val_ci": [
+      8045.943882521248,
+      8622.344117478748
+    ],
+    "delta": 160.77599999999993,
+    "delta_ci": [
+      -151.4855273168769,
+      473.0375273168768
+    ],
+    "ratio": 1.0196707159153973,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 0.6316,
+    "hit_ci": [
+      0.6056054615830754,
+      0.6575945384169247
+    ],
+    "val_mean": 8782.992,
+    "val_ci": [
+      8550.908556420125,
+      9015.075443579875
+    ],
+    "delta": 609.6240000000004,
+    "delta_ci": [
+      384.2425390926069,
+      835.0054609073939
+    ],
+    "ratio": 1.0745866330746396,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "value_density",
+    "n_seeds": 10,
+    "hit_mean": 0.8270799999999999,
+    "hit_ci": [
+      0.8039680101677441,
+      0.8501919898322557
+    ],
+    "val_mean": 3960.612,
+    "val_ci": [
+      3617.786993191874,
+      4303.437006808126
+    ],
+    "delta": -614.9520000000002,
+    "delta_ci": [
+      -746.728811621099,
+      -483.17518837890145
+    ],
+    "ratio": 0.8656008308483937,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "value_density_ac",
+    "n_seeds": 10,
+    "hit_mean": 0.8253299999999999,
+    "hit_ci": [
+      0.8034445455675201,
+      0.8472154544324797
+    ],
+    "val_mean": 3603.564,
+    "val_ci": [
+      3254.088757210656,
+      3953.039242789344
+    ],
+    "delta": -972.0000000000002,
+    "delta_ci": [
+      -1107.2254264564297,
+      -836.7745735435708
+    ],
+    "ratio": 0.7875671720469869,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "space_time",
+    "n_seeds": 10,
+    "hit_mean": 0.84657,
+    "hit_ci": [
+      0.8234436902449266,
+      0.8696963097550735
+    ],
+    "val_mean": 4119.192,
+    "val_ci": [
+      3753.3339366237014,
+      4485.050063376299
+    ],
+    "delta": -456.3720000000002,
+    "delta_ci": [
+      -578.6936061732656,
+      -334.05039382673476
+    ],
+    "ratio": 0.9002588533348019,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 48.312,
+    "val_ci": [
+      34.351094915970705,
+      62.27290508402929
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 48.312,
+    "val_ci": [
+      34.1998984654693,
+      62.42410153453069
+    ],
+    "delta": 3.552713678800501e-16,
+    "delta_ci": [
+      -0.2973682816120976,
+      0.2973682816120983
+    ],
+    "ratio": 1.0,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "casual",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 1.0,
+    "hit_ci": [
+      1.0,
+      1.0
+    ],
+    "val_mean": 48.42,
+    "val_ci": [
+      34.348451429241855,
+      62.49154857075815
+    ],
+    "delta": 0.10799999999999983,
+    "delta_ci": [
+      -0.13631297358824246,
+      0.35231297358824215
+    ],
+    "ratio": 1.0022354694485842,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 0.79149,
+    "hit_ci": [
+      0.7588270224895878,
+      0.8241529775104123
+    ],
+    "val_mean": 8173.3679999999995,
+    "val_ci": [
+      7991.3614927268645,
+      8355.374507273134
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 0.5527000000000001,
+    "hit_ci": [
+      0.5317241654117825,
+      0.5736758345882177
+    ],
+    "val_mean": 7555.7159999999985,
+    "val_ci": [
+      7319.80218117797,
+      7791.629818822027
+    ],
+    "delta": -617.652,
+    "delta_ci": [
+      -795.908392648,
+      -439.39560735200007
+    ],
+    "ratio": 0.924431152494296,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "enterprise",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 0.67896,
+    "hit_ci": [
+      0.6678186775734474,
+      0.6901013224265526
+    ],
+    "val_mean": 8806.428,
+    "val_ci": [
+      8463.48855191955,
+      9149.36744808045
+    ],
+    "delta": 633.0600000000001,
+    "delta_ci": [
+      266.1050051978646,
+      1000.0149948021356
+    ],
+    "ratio": 1.0774539944855046,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "lru",
+    "n_seeds": 10,
+    "hit_mean": 0.9603300000000001,
+    "hit_ci": [
+      0.9519687830011503,
+      0.96869121699885
+    ],
+    "val_mean": 4575.564,
+    "val_ci": [
+      4233.022210986051,
+      4918.10578901395
+    ],
+    "delta": null,
+    "delta_ci": null,
+    "ratio": null,
+    "sig": false
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "heuristic",
+    "n_seeds": 10,
+    "hit_mean": 0.84155,
+    "hit_ci": [
+      0.8187842542722543,
+      0.8643157457277457
+    ],
+    "val_mean": 4366.368,
+    "val_ci": [
+      3982.3793957804323,
+      4750.356604219568
+    ],
+    "delta": -209.19600000000008,
+    "delta_ci": [
+      -303.2370794061928,
+      -115.15492059380739
+    ],
+    "ratio": 0.9542797346950016,
+    "sig": true
+  },
+  {
+    "arch": "Llama-2-70B",
+    "workload": "power_user",
+    "policy": "logistic_v1",
+    "n_seeds": 10,
+    "hit_mean": 0.83879,
+    "hit_ci": [
+      0.8136731850449489,
+      0.8639068149550512
+    ],
+    "val_mean": 3957.9120000000003,
+    "val_ci": [
+      3628.251869198669,
+      4287.572130801332
+    ],
+    "delta": -617.652,
+    "delta_ci": [
+      -744.3198379728667,
+      -490.9841620271333
+    ],
+    "ratio": 0.8650107396596354,
+    "sig": true
+  }
+]

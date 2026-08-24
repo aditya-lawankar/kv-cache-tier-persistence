@@ -1,0 +1,116 @@
+[
+  {
+    "policy": "lru",
+    "workload": "enterprise",
+    "n_seeds": 5,
+    "hit_rate_mean": 0.6628,
+    "hit_rate_ci95": [
+      0.6051,
+      0.7204
+    ],
+    "cost_saved_per_day_mean": 0.03,
+    "cost_saved_per_day_ci95": [
+      0.03,
+      0.03
+    ],
+    "hits_by_tier_mean": {
+      "hot": 32.0,
+      "warm": 374.0,
+      "cold": 838.4
+    },
+    "delta_cost_vs_lru_mean": null,
+    "delta_cost_vs_lru_ci95": null,
+    "delta_hit_rate_vs_lru_mean": null,
+    "delta_hit_rate_vs_lru_ci95": null
+  },
+  {
+    "policy": "logistic_v1",
+    "workload": "enterprise",
+    "n_seeds": 5,
+    "hit_rate_mean": 0.6834,
+    "hit_rate_ci95": [
+      0.6601,
+      0.7068
+    ],
+    "cost_saved_per_day_mean": 0.05,
+    "cost_saved_per_day_ci95": [
+      0.0464,
+      0.0576
+    ],
+    "hits_by_tier_mean": {
+      "hot": 191.0,
+      "warm": 486.2,
+      "cold": 609.6
+    },
+    "delta_cost_vs_lru_mean": 0.02,
+    "delta_cost_vs_lru_ci95": [
+      0.0164,
+      0.0276
+    ],
+    "delta_hit_rate_vs_lru_mean": 0.0207,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.0201,
+      0.0614
+    ]
+  },
+  {
+    "policy": "value_density",
+    "workload": "enterprise",
+    "n_seeds": 5,
+    "hit_rate_mean": 0.4952,
+    "hit_rate_ci95": [
+      0.4692,
+      0.5212
+    ],
+    "cost_saved_per_day_mean": 0.07,
+    "cost_saved_per_day_ci95": [
+      0.0592,
+      0.0728
+    ],
+    "hits_by_tier_mean": {
+      "hot": 70.8,
+      "warm": 276.8,
+      "cold": 584.2
+    },
+    "delta_cost_vs_lru_mean": 0.04,
+    "delta_cost_vs_lru_ci95": [
+      0.0292,
+      0.0428
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.1676,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.2114,
+      -0.1238
+    ]
+  },
+  {
+    "policy": "space_time",
+    "workload": "enterprise",
+    "n_seeds": 5,
+    "hit_rate_mean": 0.5314,
+    "hit_rate_ci95": [
+      0.5031,
+      0.5598
+    ],
+    "cost_saved_per_day_mean": 0.06,
+    "cost_saved_per_day_ci95": [
+      0.0572,
+      0.0708
+    ],
+    "hits_by_tier_mean": {
+      "hot": 81.0,
+      "warm": 329.2,
+      "cold": 589.6
+    },
+    "delta_cost_vs_lru_mean": 0.03,
+    "delta_cost_vs_lru_ci95": [
+      0.0272,
+      0.0408
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.1313,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.1706,
+      -0.0921
+    ]
+  }
+]
