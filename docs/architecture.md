@@ -164,6 +164,21 @@ cross between 12k and 53k. That inflated a long session's worth relative to a sh
 `tests/test_cost_model.py`, including a check that predictions land within 2x of measured
 GPU prefill latency, and that its $N^*$ values match the break-even analysis exactly.
 
+### Two-tier and three-tier configurations
+
+`--tiers two` removes the cold tier and redistributes its capacity, holding total bytes
+fixed. This exists because whether a tier can pay for itself is architecture-dependent: if
+a tier's `N*` exceeds the workload's context lengths, no hit from it can repay its restore,
+and the tier is capacity the system cannot use. Under TinyLlama economics the cold tier is
+exactly that, and removing it is worth 3.6x in delivered value, more than any eviction
+policy in the study.
+
+One trap for anyone extending this: `cold_capacity_mb=0` means **unlimited**, not empty,
+because `StorageTier.is_full()` treats a non-positive capacity as uncapped. The runner
+therefore pins the cold tier to 1 byte in two-tier mode. The first version of that control
+set 0 and produced a clean-looking 100% hit rate for every policy; what exposed it was the
+run logging 3,265 cold-tier hits in a configuration with no cold tier.
+
 ### Scale model
 
 The simulator serializes a downscaled geometry (2 layers, 2 heads, head_dim 32, FP16 =
