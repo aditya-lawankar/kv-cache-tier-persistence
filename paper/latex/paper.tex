@@ -225,7 +225,7 @@ Because prefill scales $O(N^2)$ but memory scales $O(N)$, value density grows li
 \subsection{Space-Time Density: A Cache Is a Dynamic System}
 \label{sec:std}
 
-Our evaluation revealed that static value-density collapses in practice (\S\ref{sec:eval}). A cache is not a static knapsack; it is a dynamic system governed by Little's Law. Each entry occupies \emph{space over time}. The correct objective must account for expected sojourn time $\mathbb{E}[\Delta t]$:
+Little's Law suggests a failure mode for static value density. We state the resulting objective here because it is one of the policies we evaluate, and we state its outcome up front: the failure mode is real but narrow, and lifetime normalization earns its keep only under high size variance (\S\ref{sec:whystatic}). An earlier version of this paper reported it as general, on the strength of a cost model we have since corrected. The reasoning is that a cache is not a static knapsack but a dynamic system, in which each entry occupies \emph{space over time}, so the objective must account for expected sojourn time $\mathbb{E}[\Delta t]$:
 \begin{equation}
   \text{Space-Time Density} = \frac{P(\text{resume}) \times \text{RecomputeCost}(N)}{\text{Size}(N) \times \mathbb{E}[\Delta t]}
   \label{eq:std_eq}
@@ -264,7 +264,7 @@ This objective is structurally an adaptation of LHD's hit density~\cite{beckmann
 
 We report value as \textbf{GPU-seconds saved per day}. Dollars are a linear rescaling ($\$2.50$/hr for an on-demand A100~80GB) that we quote where it aids interpretation, but the GPU-second is the scale-free quantity: it does not depend on the reader's negotiated GPU price, and at our workload's modest arrival rates the dollar figures say more about deployment size than about policies.
 
-\textbf{On the size of these numbers.} Our enterprise workload issues 200 sessions per hour, so its absolute figures are small: LRU's 36.8 GPU-s/day is about three cents. That is a statement about the simulated deployment, not about the effect, and we normalize two ways so the reader need not do this arithmetic themselves. Per unit of traffic, the workload serves roughly 6{,}300 cache loads per day, so LRU delivers 5.9 GPU-seconds per thousand loads against value density's 11.7, an advantage of 5.8 GPU-seconds per thousand. Extrapolated linearly to a service handling $10^4$ requests per second at the same size distribution, that gap is roughly 1{,}800 GPU-hours per day, or about 76 A100s held continuously. We report the per-thousand-loads figure as the meaningful one: it follows directly from the measurements, whereas the production extrapolation assumes cache dynamics unchanged across five orders of magnitude of arrival rate, which we have not simulated and do not claim.
+\textbf{On the size of these numbers.} Our enterprise workload issues 200 sessions per hour, so its absolute figures are small: LRU's 36.8 GPU-s/day is about three cents. That is a statement about the simulated deployment, not about the effect, and we normalize two ways so the reader need not do this arithmetic themselves. Per unit of traffic, the workload serves roughly 6{,}300 cache loads per day, so LRU delivers 5.9 GPU-seconds per thousand loads against value density's 11.7, an advantage of 5.8 GPU-seconds per thousand. We report the per-thousand-loads figure rather than extrapolating to a production arrival rate, because such an extrapolation would assume cache dynamics unchanged across five orders of magnitude of load, which we have not simulated.
 
 \textbf{Architecture is an experimental variable, not a constant.} Whether a hit is worth anything depends on the model being served, because prefill scales superlinearly in $N$ while restore scales linearly. We therefore run the matrix under two architectures: \textbf{TinyLlama-1.1B} (22\,KB/token; the model our end-to-end validation measures, \S\ref{sec:tinyllama}) and \textbf{Llama-2-70B} (320\,KB/token, GQA; representative of models large enough that persistence is deployed in practice). We also report Llama-2-7B as a limiting case: its MHA cache is so large per token that \emph{no} session in our workload clears break-even, making persistence the wrong design there rather than a policy problem (\S\ref{sec:breakeven}).
 
@@ -349,12 +349,6 @@ The space-time correction (V3) divides that same density by $\mathbb{E}[\Delta t
 
 \textbf{A retraction.} An earlier version of this paper reported that static value density \emph{collapsed}, worst hit rate of any policy, with V3 recovering \$94/day over it, and offered that as evidence for the Little's Law diagnosis. That result did not survive the cost-model correction of \S\ref{sec:lru_strong}. The superseded model overstated a large session's worth relative to a small one by $3\text{--}4.5\times$, which is precisely the signal V2 maximizes; V2 hoarded accordingly and starved its own cardinality. Priced correctly, the same policy hoards less and wins. This is the clearest instance of a pattern we return to in \S\ref{sec:lru_strong}: the collapse we had diagnosed as a property of the \emph{objective} was a property of our \emph{cost model}, and only a value-aware policy could have been misled by it.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/figure3_failure_modes.png}
-  \caption{Policy selection decision matrix mapping failure modes by workload variance characteristics.}
-  \label{fig:failuremodes}
-\end{figure}
 
 \subsection{Hit Rate and Value Decouple}
 \label{sec:decouple}

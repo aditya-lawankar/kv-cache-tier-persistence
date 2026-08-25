@@ -11,7 +11,6 @@ numbers — so every figure in the paper is reproducible by rerunning:
 Produces:
   figure1_hit_rate.png      – Grouped bar chart of cache hit rates (95% t-CI over seeds)
   figure2_cost_savings.png  – Grouped bar chart of daily GPU cost savings (95% t-CI)
-  figure3_failure_modes.png – 2x2 conceptual decision matrix
 """
 
 import os
@@ -226,103 +225,10 @@ def make_figure2(agg):
 # ════════════════════════════════════════════════════════════════════════
 # Figure 3 – Failure-Mode Conceptual 2×2 Matrix
 # ════════════════════════════════════════════════════════════════════════
-def make_figure3(agg):
-    fig, ax = plt.subplots(figsize=(7.5, 6.0))
 
-    # Quadrant colours (muted pastels)
-    colors = {
-        "TL": "#d6eaf8",  # light blue
-        "TR": "#fdebd0",  # light peach
-        "BL": "#d5f5e3",  # light green
-        "BR": "#f5b7b1",  # light coral
-    }
-
-    quadrants = [
-        (0.0, 0.5, 0.5, 0.5, "TL"),
-        (0.5, 0.5, 0.5, 0.5, "TR"),
-        (0.0, 0.0, 0.5, 0.5, "BL"),
-        (0.5, 0.0, 0.5, 0.5, "BR"),
-    ]
-    for x0, y0, w, h, key in quadrants:
-        rect = mpatches.FancyBboxPatch(
-            (x0 + 0.01, y0 + 0.01), w - 0.02, h - 0.02,
-            boxstyle="round,pad=0.02",
-            facecolor=colors[key], edgecolor="#888888", linewidth=1.0,
-            transform=ax.transAxes,
-        )
-        ax.add_patch(rect)
-
-    # Pull headline numbers from the data
-    lru_ent = agg[("lru", "enterprise")]["hit_rate_mean"] * 100
-    lru_pow = agg[("lru", "power_user")]
-    heur_pow = agg[("heuristic", "power_user")]
-    vd_pow_hit = agg[("value_density", "power_user")]["hit_rate_mean"] * 100
-    casual_hit = agg[("lru", "casual")]["hit_rate_mean"] * 100
-
-    # Value/hit-rate decoupling: heuristic's value retention at lower hit rate
-    hit_gap = (lru_pow["hit_rate_mean"] - heur_pow["hit_rate_mean"]) * 100
-    value_retained = heur_pow["cost_saved_per_day_mean"] / lru_pow["cost_saved_per_day_mean"] * 100
-    tr_line = (f"Power User\nHits $\\neq$ Value:\n$-${hit_gap:.0f}pt hits $\\Rightarrow$ "
-               f"{value_retained:.0f}% of value")
-
-    st_delta = None
-    if ("space_time", "power_user") in agg and ("value_density", "power_user") in agg:
-        st_delta = (agg[("space_time", "power_user")]["cost_saved_per_day_mean"]
-                    - agg[("value_density", "power_user")]["cost_saved_per_day_mean"])
-    br_line = f"V2 Cardinality\nCollapse Zone\n({vd_pow_hit:.0f}% hit rate)"
-    if st_delta is not None:
-        br_line += f"\nV3 recovers +\\${st_delta:,.0f}/day"
-
-    texts = [
-        (0.25, 0.75, f"Enterprise\nLRU Dominates\n({lru_ent:.0f}% hit rate)",   "#1a5276"),
-        (0.75, 0.75, tr_line,                                                    "#784212"),
-        (0.25, 0.25, f"Casual\nAll Tied\n({casual_hit:.0f}% — unconstrained)", "#196f3d"),
-        (0.75, 0.25, br_line,                                                    "#922b21"),
-    ]
-    for tx, ty, label, color in texts:
-        ax.text(
-            tx, ty, label,
-            transform=ax.transAxes,
-            ha="center", va="center",
-            fontsize=11, fontweight="semibold",
-            color=color, linespacing=1.45,
-        )
-
-    ax.set_xlabel("Token-Count Variance (σ)", fontsize=12, labelpad=12)
-    ax.set_ylabel("Prediction Confidence Variance", fontsize=12, labelpad=12)
-
-    ax.set_xticks([0.25, 0.75])
-    ax.set_xticklabels(["Low", "High"], fontsize=10)
-    ax.set_yticks([0.25, 0.75])
-    ax.set_yticklabels(["Low", "High"], fontsize=10)
-
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_aspect("equal")
-
-    ax.axhline(0.5, color="#555555", linewidth=1.2, linestyle="-")
-    ax.axvline(0.5, color="#555555", linewidth=1.2, linestyle="-")
-    ax.grid(False)
-
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_linewidth(1.0)
-        spine.set_color("#555555")
-
-    ax.set_title("Policy Selection Decision Matrix", fontsize=13, pad=14)
-
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, "figure3_failure_modes.png")
-    fig.savefig(path)
-    plt.close(fig)
-    print(f"  [OK] {path}")
-
-
-# ── Main ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Generating figures from", AGG_PATH)
     aggregates = load_aggregates()
     make_figure1(aggregates)
     make_figure2(aggregates)
-    make_figure3(aggregates)
     print("Done — all figures saved to", OUT_DIR)
