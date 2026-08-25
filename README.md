@@ -67,6 +67,13 @@ what a hit is worth. A persona-strength sweep varies how predictable the simulat
 (AUC 0.659 to 0.739, retraining at each setting): the learned policy's standing depends on that
 choice, the metric finding does not.
 
+**Provisioning dominates policy.** A two-tier control (cold tier removed, its capacity given
+to hot and warm, total bytes held fixed) raises LRU from 36.8 to 131.0 GPU-s/day, a 3.6×
+gain from deleting a tier whose restore can never be repaid at this architecture's break-even
+length. That is larger than any eviction policy we evaluated (best: 1.99×). The metric
+inversion survives the correction at 1.15×, so it is not merely an artifact of the
+provisioning error. Regenerate with `--tiers two`.
+
 **Hardware validation.** A long-context sweep on Llama-3.2-1B (T4, 512 to 6,144 tokens) shows
 cold prefill growing 14.8× while the restore path grows 1.8× over the same 12× context increase,
 reaching a 9.1× TTFT speedup. Restoration is faithful: the warm and cold next-token logit vectors

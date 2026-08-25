@@ -114,7 +114,8 @@ class AggregateResult:
 # Config builder
 # ──────────────────────────────────────────────────────────────────
 
-def _make_config(policy_name: str, tmp_dir: str, capacity_mb: int = 500) -> SystemConfig:
+def _make_config(policy_name: str, tmp_dir: str, capacity_mb: int = 500,
+                 tiers: str = "three") -> SystemConfig:
     """Create a SystemConfig tuned for fast simulation.
 
     Default total capacity: 500 MB (50 hot + 150 warm + 300 cold).
@@ -140,9 +141,20 @@ def _make_config(policy_name: str, tmp_dir: str, capacity_mb: int = 500) -> Syst
     cfg = SystemConfig(
         model=ModelConfig(num_layers=2, num_heads=2, head_dim=32, block_size=16, dtype="float16"),
         tiers=TierConfig(
-            hot_capacity_mb=int(capacity_mb * 0.10),   # default 50 MB
-            warm_capacity_mb=int(capacity_mb * 0.30),  # default 150 MB
-            cold_capacity_mb=int(capacity_mb * 0.60),  # default 300 MB
+            # "two" removes the cold tier and redistributes its capacity, holding
+            # total bytes fixed. For architectures whose N*(object storage) exceeds
+            # the workload's context lengths, a cold hit can never repay its restore,
+            # so a three-tier hierarchy is provisioning the system cannot use. This
+            # control separates "value-aware policies win" from "value-aware policies
+            # avoid a tier that pays nothing".
+            hot_capacity_mb=int(capacity_mb * (0.25 if tiers == "two" else 0.10)),
+            warm_capacity_mb=int(capacity_mb * (0.75 if tiers == "two" else 0.30)),
+            # NOTE: cold_capacity_mb=0 would mean UNLIMITED, not empty --
+            # StorageTier.is_full() treats a non-positive capacity as uncapped.
+            # The two-tier case is enforced after construction instead, by
+            # pinning the cold tier's capacity to 1 byte so every warm->cold
+            # demotion takes the "cold tier full" path and deletes.
+            cold_capacity_mb=int(capacity_mb * 0.60),
             warm_storage_path=os.path.join(tmp_dir, "warm"),
             cold_storage_path=os.path.join(tmp_dir, "cold"),
             cold_backend="local",
@@ -208,6 +220,7 @@ def run_single_experiment(
     capacity_mb: int = 500,
     arch: str = "tinyllama",
     persona_sigma: float = 0.6,
+    tiers: str = "three",
 ) -> ExperimentResult:
     """
     Simulate the cache lifecycle for one (policy, workload, seed) triple.
@@ -233,12 +246,16 @@ def run_single_experiment(
 
     try:
         clock = SimulatedClock()
-        config = _make_config(policy_name, tmp_dir, capacity_mb=capacity_mb)
+        config = _make_config(policy_name, tmp_dir, capacity_mb=capacity_mb, tiers=tiers)
         # One cost model instance prices BOTH the policies' decisions and the
         # experiment's accounting, so a policy can never optimize a different
         # objective than the one it is scored on.
         cost_model = CostModel(model_spec=MODELS_BY_KEY[arch])
         manager = TieredCacheManager(config, clock=clock, cost_model=cost_model)
+        if tiers == "two":
+            # 1 byte, not 0: is_full() treats <=0 as uncapped, so 0 would give
+            # the cold tier infinite capacity and nothing would ever be evicted.
+            manager.cold_tier.capacity_bytes = 1
 
         # Inject ML predictor into the appropriate policy
         if predictor:
@@ -462,6 +479,7 @@ def run_full_experiment(
     arch: str = "tinyllama",
     persona_sigma: float = 0.6,
     predictor_path: str = "models/logistic_predictor.pkl",
+    tiers: str = "three",
 ) -> Tuple[List[ExperimentResult], List[AggregateResult]]:
     """
     Run the 5 x 3 x N experiment matrix:
@@ -505,8 +523,12 @@ def run_full_experiment(
     print("=" * 100)
     print(f"  Duration: {duration_days * 24:.1f} hours simulated | Seeds: {seeds}")
     print(f"  Architecture priced: {MODELS_BY_KEY[arch].name}")
-    print(f"  Capacity: {capacity_mb} MB total "
-          f"({int(capacity_mb*0.10)} hot + {int(capacity_mb*0.30)} warm + {int(capacity_mb*0.60)} cold)")
+    if tiers == "two":
+        print(f"  Capacity: {capacity_mb} MB total "
+              f"({int(capacity_mb*0.25)} hot + {int(capacity_mb*0.75)} warm, NO cold tier)")
+    else:
+        print(f"  Capacity: {capacity_mb} MB total "
+              f"({int(capacity_mb*0.10)} hot + {int(capacity_mb*0.30)} warm + {int(capacity_mb*0.60)} cold)")
     print(f"  Policies: {', '.join(p[0] for p in policies)}")
     print(f"  Workloads: {', '.join(workloads)}")
     print("=" * 100 + "\n")
@@ -531,6 +553,7 @@ def run_full_experiment(
                     capacity_mb=capacity_mb,
                     arch=arch,
                     persona_sigma=persona_sigma,
+                    tiers=tiers,
                 ))
             elapsed = time.perf_counter() - t0
             results.extend(cell_results)
@@ -709,6 +732,9 @@ if __name__ == "__main__":
     parser.add_argument("--workloads", type=str, default=None,
                         help="Comma-separated workload filter "
                              "(default: casual,enterprise,power_user)")
+    parser.add_argument("--tiers", type=str, default="three", choices=["two", "three"],
+                        help="'two' drops the cold tier and redistributes its capacity, "
+                             "holding total bytes fixed (see _make_config)")
     parser.add_argument("--predictor", type=str, default="models/logistic_predictor.pkl",
                         help="Path to the trained predictor. Give each concurrent "
                              "run its own copy; the default is shared state.")
@@ -746,4 +772,5 @@ if __name__ == "__main__":
             arch=args.arch,
             persona_sigma=args.persona_sigma,
             predictor_path=args.predictor,
+            tiers=args.tiers,
         )

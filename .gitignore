@@ -23,6 +23,7 @@ benchmarks/results/*
 !benchmarks/results/experiment_results_persona_aggregate.json
 !benchmarks/results/compression_benchmark.json
 !benchmarks/results/paper_tables_corrected.json
+!benchmarks/results/experiment_results_twotier_aggregate.json
 !benchmarks/results/gpu_sweep/
 !benchmarks/results/gpu_sweep/*.json
 

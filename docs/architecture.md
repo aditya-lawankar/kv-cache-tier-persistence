@@ -193,7 +193,8 @@ are the alternative; see the paper's related work.
 
 | Script | Purpose |
 |---|---|
-| `benchmarks/experiment_runner.py` | The matrix. Flags: `--arch`, `--capacity-mb`, `--persona-sigma`, `--predictor`, `--policies`, `--workloads`, `--azure` |
+| `benchmarks/experiment_runner.py` | The matrix. Flags: `--arch`, `--capacity-mb`, `--persona-sigma`, `--predictor`, `--policies`, `--workloads`, `--azure`, `--tiers` |
+| | `--tiers two` drops the cold tier. Note `cold_capacity_mb=0` means UNLIMITED (`StorageTier.is_full` treats non-positive capacity as uncapped), so the runner pins the cold tier to 1 byte instead |
 | `benchmarks/rescore_results.py` | Re-price finished runs at another architecture from logged hit histograms. Refuses cost-model-bound policies |
 | `benchmarks/make_paper_tables.py` | Raw shards to console tables plus LaTeX bodies |
 | `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |

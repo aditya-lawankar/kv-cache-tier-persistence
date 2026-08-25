@@ -36,8 +36,8 @@
 
 % ─── Title ───────────────────────────────────────────────────
 \title{\Large \bf Hit Rate Is Not Value:\\
-A Rigorous Evaluation of Learned and Value-Aware Eviction\\
-for Tiered LLM KV-Cache Persistence}
+When Cache Metrics Mislead in\\
+Tiered LLM KV-Cache Persistence}
 
 \author{
   {\rm Aditya Lawankar} \\
@@ -53,9 +53,11 @@ for Tiered LLM KV-Cache Persistence}
 \begin{abstract}
 Large Language Model serving is bottlenecked by memory capacity for Key-Value (KV) caches. Multi-turn conversations force frequent cache eviction and costly recomputation (the ``cold-start'' problem). We build a three-tier KV cache persistence system (VRAM $\to$ NVMe $\to$ object storage) and evaluate six eviction policies (LRU, a recency heuristic, learned binary classification, static value-density with and without admission control, and a lifetime-normalized space-time density policy) under a protocol built to avoid common evaluation artifacts: virtual-clock trace replay, persona-driven synthetic workloads, tier-discounted value accounting, and paired comparisons across 10 seeds with 95\% confidence intervals.
 
-Our hypothesis was that a learned policy would beat LRU on cache hit rate. It does not: LRU wins hit rate on every constrained workload we test, by 11 points over a logistic classifier on enterprise traffic and by 12 on power-user traffic, with all paired deltas significant. The interesting result is what that verdict conceals. On the same enterprise workload, LRU delivers the \emph{least} GPU time saved of any policy in our study, and a value-density policy that concedes 21 hit-rate points saves 1.99$\times$ as much (paired 95\% CI $[+30.4, +42.4]$ GPU-s/day). Ranking by hit rate selects the worst available policy while reporting it as the best.
+Our hypothesis was that a learned policy would beat LRU on cache hit rate. It does not: LRU wins hit rate on every constrained workload we test, with all paired deltas significant. The interesting result is what that verdict conceals, and why.
 
-We explain when and why the metrics diverge. A hit is worth nothing unless the prefill it avoids exceeds the restore it costs, a threshold set by the break-even context length $N^{*}$, and above that threshold savings grow superlinearly in context length. Hit rate encodes neither effect. Consequently the metrics agree when cached items are near-uniform in value, on our power-user workload, whose sessions sit far above $N^{*}$, and under Llama-2-70B economics, where grouped-query attention places $N^{*}$ at 12 tokens so that essentially every hit pays, and diverge sharply when the workload straddles $N^{*}$. We derive $N^{*}$ analytically, show it varies four orders of magnitude across architectures, and validate the model against measured hardware.
+A cache hit is worth nothing unless the prefill it avoids exceeds the restore it costs, a threshold set by the break-even context length $N^{*}$, and above that threshold savings grow superlinearly in context length. Hit rate encodes neither effect, so it can rank policies backwards: on enterprise traffic the hit-rate winner delivers the \emph{least} GPU time saved of any policy we test. Both effects are closed-form, which yields a decision rule that needs no predictor. Compute $N^{*}$ per tier from the served architecture, decline to build tiers whose restore cannot be repaid, and admit entries only above threshold. Following that rule is worth more than any eviction policy we evaluated: deleting a tier that cannot pay raises delivered value 3.6$\times$ at identical capacity, where the best policy choice within a fixed hierarchy is worth 1.99$\times$ and, once provisioning is corrected, 1.15$\times$.
+
+We show when the two metrics agree, and confirm it three ways. They agree when cached items are near-uniform in value: on workloads far above $N^{*}$, and under Llama-2-70B economics where grouped-query attention places $N^{*}$ at 12 tokens so that essentially every hit pays. They diverge when the workload straddles $N^{*}$. Switching architectures and switching hierarchies isolate the same residual superlinearity effect to within two points. $N^{*}$ varies four orders of magnitude across architectures, and we validate the model against measured hardware.
 
 A ground-truth ablation isolates the effect from every confound: two clairvoyant policies that both cache \emph{perfectly}, 100.0\% hit rate against 100.0\%, a paired difference of zero on every seed, still deliver significantly different value, because once nothing need be evicted the remaining decision is which tier holds each entry, and hit rate cannot see it.
 
@@ -90,9 +92,10 @@ Finally, we report a methodological result. Reaching the conclusions above requi
 This paper makes the following contributions:
 \begin{enumerate}
   \item A three-tier KV cache persistence system with pluggable eviction backends (LRU, heuristic, learned classification, value-density, space-time density) and an evaluation protocol designed to remove common artifacts: virtual-clock replay, persona-driven workloads, replay of the Azure LLM inference production trace, tier-discounted value accounting, and paired multi-seed statistics.
+  \item A mechanism that predicts when hit rate misleads, in terms of the break-even length $N^{*}$ and the superlinearity of prefill, and a closed-form decision rule that follows from it and requires no predictor: price each tier against $N^{*}$, and admit only what clears it.
+  \item The demonstration that hit rate and delivered value \emph{reverse} on realistic workloads, and that this survives correcting the provisioning error the mechanism itself exposes: the hit-rate winner remains the value loser at $1.15\times$ in a correctly provisioned two-tier hierarchy.
+  \item The finding that provisioning dominates policy: removing a tier whose restore cannot be repaid is worth $3.6\times$ at identical total capacity, more than any eviction policy we evaluated.
   \item Evidence that LRU is a stronger hit-rate baseline than the learned-caching literature assumes: it wins that metric on every constrained workload we test, with all paired deltas significant at 95\%.
-  \item The demonstration that hit rate and delivered value \emph{reverse} on realistic workloads: the hit-rate winner is the value loser, by up to 1.99$\times$, so hit rate alone is not merely imprecise but actively misleading as a target for KV-cache eviction research.
-  \item A mechanism that predicts when the two metrics agree, in terms of the break-even length $N^{*}$ and the superlinearity of prefill, confirmed across two model architectures and three workloads.
   \item An analytic break-even model for when restoration beats recomputation, in which $N^{*}$ varies by four orders of magnitude with model architecture, validated against measured GPU and CPU prefill latencies.
   \item Two self-reported evaluation defects, moving the verdict in opposite directions, and the observation that harness bugs flatter whichever side of a comparison depends on the broken component rather than perturbing rankings at random.
 \end{enumerate}
@@ -261,6 +264,8 @@ This objective is structurally an adaptation of LHD's hit density~\cite{beckmann
 
 We report value as \textbf{GPU-seconds saved per day}. Dollars are a linear rescaling ($\$2.50$/hr for an on-demand A100~80GB) that we quote where it aids interpretation, but the GPU-second is the scale-free quantity: it does not depend on the reader's negotiated GPU price, and at our workload's modest arrival rates the dollar figures say more about deployment size than about policies.
 
+\textbf{On the size of these numbers.} Our enterprise workload issues 200 sessions per hour, so its absolute figures are small: LRU's 36.8 GPU-s/day is about three cents. That is a statement about the simulated deployment, not about the effect, and we normalize two ways so the reader need not do this arithmetic themselves. Per unit of traffic, the workload serves roughly 6{,}300 cache loads per day, so LRU delivers 5.9 GPU-seconds per thousand loads against value density's 11.7, an advantage of 5.8 GPU-seconds per thousand. Extrapolated linearly to a service handling $10^4$ requests per second at the same size distribution, that gap is roughly 1{,}800 GPU-hours per day, or about 76 A100s held continuously. We report the per-thousand-loads figure as the meaningful one: it follows directly from the measurements, whereas the production extrapolation assumes cache dynamics unchanged across five orders of magnitude of arrival rate, which we have not simulated and do not claim.
+
 \textbf{Architecture is an experimental variable, not a constant.} Whether a hit is worth anything depends on the model being served, because prefill scales superlinearly in $N$ while restore scales linearly. We therefore run the matrix under two architectures: \textbf{TinyLlama-1.1B} (22\,KB/token; the model our end-to-end validation measures, \S\ref{sec:tinyllama}) and \textbf{Llama-2-70B} (320\,KB/token, GQA; representative of models large enough that persistence is deployed in practice). We also report Llama-2-7B as a limiting case: its MHA cache is so large per token that \emph{no} session in our workload clears break-even, making persistence the wrong design there rather than a policy problem (\S\ref{sec:breakeven}).
 
 \textbf{Statistics.} Every (policy, workload) cell is run over 10 independent seeds. All policies replay the identical trace per seed, so policy comparisons are \emph{paired}: we report per-seed deltas against LRU with 95\% t-based confidence intervals across seeds.
@@ -395,6 +400,78 @@ SpaceTime V3  & Power User & 84.7 & 4,119 & $-456$\,$[-579,-334]$ \\
 Table~\ref{tab:arch} confirms the decomposition. On \emph{power-user}, where sessions were already far above TinyLlama's $N^{*}$, eliminating the threshold hands LRU an unambiguous win: it leads every policy by $0.87$--$0.95\times$, all significant, precisely the outcome hit rate would have predicted. On \emph{enterprise}, a residual inversion survives, V1, V2, and V3 still beat LRU while conceding 11--16 hit-rate points, but the margin collapses from $1.99\times$ to $1.07$--$1.08\times$. Splitting the effects this way, the threshold accounts for roughly a $1.85\times$ advantage and the magnitude effect for the remaining ${\sim}1.08\times$.
 
 The magnitude effect is small at 70B for a reason the cost model makes explicit: prefill's quadratic attention term does not overtake its linear weight term until $N{\approx}53{,}400$ tokens for this architecture, so within our context range a 70B prefill is nearly \emph{linear} in $N$. Value is then close to proportional to total tokens served from cache, which is very nearly what hit rate measures when sizes are comparable. Hit rate is therefore most reliable for large models and least reliable for small and mid-sized models served from slow tiers. This is the opposite of where intuition anchored on absolute serving cost would place the risk.
+
+\subsection{Provisioning Dominates Policy}
+\label{sec:twotier}
+
+Section~\ref{sec:decouple} attributes most of the enterprise inversion to the threshold
+effect, and under TinyLlama economics that effect has a stark cause: $N^{*}$ from object
+storage is 25,901 tokens against a workload clamped at 8,192, so a cold-tier hit can never
+repay its restore. A skeptical reading follows. We built a three-tier hierarchy, evaluated
+it on an architecture where the third tier cannot pay, and found that policies avoiding
+that tier win. On that reading our headline measures provisioning, not eviction.
+
+We test it directly. The control removes the cold tier and redistributes its capacity to
+hot and warm, holding total bytes fixed at 500\,MB, and replays the identical traces.
+
+\begin{table}[t]
+\centering
+\caption{Two-tier control (enterprise, 10 paired seeds, TinyLlama economics, 500\,MB in both
+configurations). Removing a tier that cannot repay its restore is worth more than any policy
+choice within the hierarchy; the metric inversion survives the removal at reduced magnitude.}
+\label{tab:twotier}
+\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{Three-tier} & \multicolumn{2}{c}{Two-tier} \\
+Policy & Hit\% & GPU-s/d & Hit\% & GPU-s/d \\
+\midrule
+LRU           & 79.1 & 36.8 & 79.4 & \textbf{131.0} \\
+Heuristic     & 55.3 & 60.7 & 56.5 & 133.4 \\
+Logistic V1   & 67.9 & 63.5 & 68.0 & \textbf{150.7} \\
+ValDensity V2 & 58.2 & \textbf{73.2} & 58.5 & 147.4 \\
+SpaceTime V3  & 57.8 & 72.4 & 58.1 & 150.0 \\
+\midrule
+Best $\times$LRU & & 1.99$\times$ & & 1.15$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three results follow, and the first is the largest effect in this paper.
+
+\emph{Provisioning dominates policy.} Deleting the cold tier raises LRU from 36.8 to 131.0
+GPU-s/day, a factor of $3.6$, at identical total capacity. No eviction policy achieves
+anything comparable within the fixed hierarchy, where the best margin is $1.99\times$.
+Two-tier LRU, the simplest policy in the simplest hierarchy, delivers $1.8\times$ more value
+than the best three-tier policy we built. The same bytes provisioned differently are worth
+more than the same bytes managed better, and the rule that decides this is arithmetic:
+compare $N^{*}$ for each tier against the workload's context-length distribution, and do not
+build a tier whose restore cannot be repaid.
+
+\emph{The metric inversion is not an artifact of that provisioning error.} With the cold
+tier gone and every hit served from a tier that can pay, LRU still wins hit rate (79.4\%)
+and still loses value: Logistic~V1 and Space-Time~V3 each deliver $1.15\times$ more
+($+19.7$ GPU-s/day $[+14.8, +24.6]$ and $+19.0$ $[+13.1, +25.0]$), and Value~Density~V2
+$1.13\times$, all significant. The reversal is smaller than the $1.99\times$ we report in
+Table~\ref{tab:results} but it does not vanish, so it does not reduce to ``value-aware
+policies avoid a useless tier.''
+
+\emph{The decomposition is confirmed independently.} Section~\ref{sec:arch} estimated the
+threshold and magnitude components at ${\approx}1.85\times$ and ${\approx}1.08\times$ by
+switching architectures. This control estimates the magnitude component at
+$1.13$--$1.15\times$ by switching hierarchies instead, holding the architecture fixed. Two
+different manipulations, agreeing to within two points, isolate the same residual effect:
+above $N^{*}$, savings grow superlinearly, so retaining fewer larger sessions beats
+retaining more smaller ones even when every hit is worth something. Hit rate cannot express
+that trade at any tier count.
+
+We therefore state the headline of Table~\ref{tab:results} with its condition attached. The
+$1.99\times$ figure holds for a three-tier deployment serving a small model, which is a
+configuration our own break-even model advises against building. The portable claim is the
+$1.15\times$ that survives correct provisioning, together with the observation that finding
+the provisioning error at all required pricing hits by what they save rather than counting
+them.
 
 \subsection{Ground Truth: Prediction Is the Binding Constraint}
 \label{sec:oracle}
@@ -696,7 +773,7 @@ Third, \emph{the model's shape holds but its constants are platform-specific}. M
 
 \textbf{A caution on baselines.} LRU's insensitivity has a methodological consequence. It consumes one input, access order, while learned policies consume nine features whose scales must match training, and value-aware policies additionally consume a cost model. A defect in any of those inputs degrades the richer policy and leaves LRU untouched, so evaluation errors do not perturb rankings symmetrically. Both defects we found in our own pipeline behaved this way (\S\ref{sec:lru_strong}). We suspect published comparisons against LRU that do not control replay-time semantics and cost-model fidelity deserve re-examination in both directions: wins for learned eviction may be artifacts, and so may losses.
 
-\textbf{Decision Framework.} (1)~Compute $N^{*}$ for the served architecture and tier first (\S\ref{sec:breakeven}); it determines everything that follows. (2)~If the workload's context lengths sit far above $N^{*}$, as on large GQA models where $N^{*}$ is tens of tokens, hits are near-uniform in value, hit rate is an adequate proxy, and LRU is the right choice: it is free, robust, and hard to beat. (3)~If the distribution straddles $N^{*}$, hit rate is actively misleading and value-aware eviction pays; a static value-density objective suffices, and lifetime normalization adds significance only under high size variance ($\sigma{=}1.2$). (4)~If context lengths sit largely below $N^{*}$, as for MHA models from object storage, no policy helps because persistence itself is value-negative; use fewer tiers rather than a better policy. (5)~Never tune on hit rate without first establishing which of these regimes applies.
+\textbf{A decision rule, in order of payoff.} (1)~Compute $N^{*}$ for the served architecture at each tier (\S\ref{sec:breakeven}). It is closed-form, needs no measurement beyond published geometry and storage constants, and determines everything below. (2)~\emph{Do not build tiers whose $N^{*}$ exceeds the workload's context lengths.} This is the largest lever we measured: $3.6\times$ (\S\ref{sec:twotier}), against $1.99\times$ for the best policy choice inside a badly provisioned hierarchy. (3)~Refuse admission to entries below the surviving tiers' $N^{*}$; this is arithmetic on the entry's token count, not a prediction, and it recovers most of what a value-aware policy would. (4)~Only then choose a policy. If context lengths sit far above $N^{*}$, hits are near-uniform in value, hit rate is an adequate proxy, and LRU is free and hard to beat. If the distribution straddles $N^{*}$, value-aware eviction adds a further $1.15\times$; static value density suffices, and lifetime normalization earns its keep only under high size variance ($\sigma{=}1.2$). (5)~Never tune on hit rate without first establishing which regime applies.
 
 \textbf{Limitations.} (1)~The real-trace evaluation replays production arrivals and sizes, but session \emph{return behavior} remains modeled. \S\ref{sec:persona} bounds how much this matters by sweeping the parameter that controls it, and finds the metric conclusion stable across the range, but a bound is not a measurement: public LLM inference traces carry no conversation identifiers, and we show linkage is not reconstructable from them (\S\ref{sec:realtrace}). Datasets with hashed conversation identifiers (e.g., WildChat, LMSYS-Chat-1M) could close this gap. (2)~GPU validation used a single T4. The Llama-3.2-1B sweep covers the region well above $N^{*}$, but server-class GPUs (A100/H100, where higher FLOPs push $N^{*}$ further out) remain unmeasured, as does a production storage path: our measured fixed restore cost is an order of magnitude above a real NVMe, which moves the empirical crossover accordingly. (3)~Tier restore costs are modeled, not measured on production hardware. (4)~The simulation stores a downscaled KV geometry as a scale model: capacity dynamics run on 512-byte-per-token entries while value and restore are priced at the served architecture, so absolute occupancy is not physical even though the session-count-to-capacity ratio and the economics are. (5)~Value is modeled throughout, from measured hardware constants but not from an instrumented production server; the absolute GPU-seconds should be read as the output of a validated model (\S\ref{sec:tinyllama}) rather than as a measurement.
 
@@ -707,11 +784,11 @@ Third, \emph{the model's shape holds but its constants are platform-specific}. M
 
 We set out to beat LRU at cache eviction with a learned policy, and failed: across three synthetic workloads, ten paired seeds, two model architectures, and a replay of the Azure LLM inference production trace, LRU wins cache hit rate every time.
 
-That verdict, however, does not mean what it appears to mean. Measured in GPU time actually saved, the same LRU that wins every hit-rate comparison delivers the least value of any policy on our enterprise workload, where a value-density policy conceding 21 hit-rate points saves 1.99$\times$ as much compute. Hit rate treats all hits as equal; KV caching makes them unequal twice over, since a hit below the break-even length $N^{*}$ is worth nothing at all and savings above it grow superlinearly with context. Where those effects are absent (workloads far above $N^{*}$, or large grouped-query models where $N^{*}$ falls to tens of tokens), the metrics agree and LRU is genuinely the right choice. Where the workload straddles $N^{*}$, optimizing hit rate selects the worst policy available and reports it as the best.
+That verdict, however, does not mean what it appears to mean. Measured in GPU time actually saved, the same LRU that wins every hit-rate comparison delivers the least value of any policy on our enterprise workload, where a value-density policy conceding 21 hit-rate points saves 1.99$\times$ as much compute, and still $1.15\times$ once we correct a provisioning error that the same analysis exposes. Hit rate treats all hits as equal; KV caching makes them unequal twice over, since a hit below the break-even length $N^{*}$ is worth nothing at all and savings above it grow superlinearly with context. Where those effects are absent (workloads far above $N^{*}$, or large grouped-query models where $N^{*}$ falls to tens of tokens), the metrics agree and LRU is genuinely the right choice. Where the workload straddles $N^{*}$, optimizing hit rate selects the worst policy available and reports it as the best.
 
 The clearest evidence is an ablation in which everything else is removed: two clairvoyant policies, both caching perfectly at a 100.0\% hit rate, still differ significantly in delivered value, because the tier an entry sits in determines what its hit is worth and hit rate cannot represent that. We arrived here by correcting our own evaluation twice, and the corrections moved in opposite directions: one flattered the learned policy, the other flattered LRU and had supported a collapse-of-value-density finding that did not survive re-pricing. Because a recency policy consumes strictly less information than its competitors, it is strictly less exposed to defects in that information, and evaluation errors consequently favor whichever side depends on the broken part. We think that asymmetry, more than any individual number in this paper, is what the learned-caching literature should take from it.
 
-Beating LRU on both metrics at once remains open. Our results suggest the path is not a better predictor but a cheaper form of discrimination: tier-aware admission that refuses hits worth less than their restore, computable in closed form from $N^{*}$, with recency doing the work everywhere else.
+The practical consequence is not a better policy but a cheaper one. Both effects that hit rate misses are closed-form in $N^{*}$, so most of what a value-aware policy buys is available as arithmetic: refuse to build tiers that cannot repay their restore, refuse admission to entries below threshold, and let recency do the rest. Deleting one such tier was worth $3.6\times$ in our measurements, more than every eviction policy we built. Beating LRU on both metrics at once remains open; beating the metric does not require beating LRU.
 
 % ═════════════════════════════════════════════════════════════
 \balance
