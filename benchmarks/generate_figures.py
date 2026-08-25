@@ -176,7 +176,7 @@ def make_figure2(agg):
             h = bar.get_height()
             ax.text(
                 bar.get_x() + bar.get_width() / 2, h + 50,
-                f"${h:,.0f}", ha="center", va="bottom",
+                f"{h:,.0f}", ha="center", va="bottom",
                 fontsize=7.5, fontweight="medium",
             )
 
@@ -190,7 +190,7 @@ def make_figure2(agg):
         target_x = x[logistic_idx] + bar_w / 2
         target_y = cost_pow[logistic_idx]
         ax.annotate(
-            f"+${d:,.0f}/day vs LRU (paired)\n95% CI [{lo:+,.0f}, {hi:+,.0f}]",
+            f"{d:+,.0f} GPU-s/day vs LRU (paired)\n95% CI [{lo:+,.0f}, {hi:+,.0f}]",
             xy=(target_x, target_y),
             xytext=(target_x + 1.05, target_y + max(cost_pow) * 0.08),
             fontsize=9, fontstyle="italic", color="#c0392b",

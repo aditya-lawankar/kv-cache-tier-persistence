@@ -200,6 +200,7 @@ are the alternative; see the paper's related work.
 | `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |
 | `benchmarks/compression_benchmark.py` | LZ4/Zstd/zlib on real KV bytes |
 | `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates. The former decision-matrix figure was removed: it encoded the value-density collapse finding that the cost-model correction retracted |
+| `benchmarks/audit_paper_numbers.py` | Cross-checks every number quoted in the paper's prose against the committed result files, plus text and mechanical assertions. Exits non-zero on any discrepancy; run before any submission |
 | `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab; Llama-3.2-1B, pins a tiled SDPA backend since T4 lacks flash). Builds the cache over tokens 0..N-2 so the warm path reconstructs the cold state, and gates on max logit deviation rather than argmax agreement |
 
 Each run logs a `hit_histogram` over `(cached_tokens, tier)`, which is a sufficient statistic

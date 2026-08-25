@@ -395,6 +395,20 @@ N x N score matrix: that OOMs at 16k tokens and inflates prefill time progressiv
 context length. The notebook pins a tiled backend to avoid it and prints the device
 capability so the fallback is visible rather than silent.
 
+### Verifying the paper's numbers
+
+The paper's remaining error class is arithmetic hygiene: a figure quoted in prose that no
+longer matches the table it came from after a re-run. Those survive proofreading because
+each sentence is locally plausible, so they are checked mechanically instead.
+
+```bash
+python benchmarks/audit_paper_numbers.py
+```
+
+It re-derives every quoted figure from the committed result JSONs, asserts that retracted
+claims stay absent from the text, and checks for rendering damage that has broken silently
+before. Non-zero exit on any discrepancy.
+
 ### Running the persona strength sweep
 
 **Why:** the resumption signal in the synthetic workloads is generated, so the
