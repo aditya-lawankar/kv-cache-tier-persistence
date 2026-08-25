@@ -15,6 +15,7 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
+\usepackage{url}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{enumitem}
@@ -41,7 +42,7 @@ Tiered LLM KV-Cache Persistence}
 
 \author{
   {\rm Aditya Lawankar} \\
-  % Institution / Affiliation
+  \texttt{lawankaraditya@gmail.com}
 }
 
 \date{}
@@ -64,6 +65,8 @@ A ground-truth ablation isolates the effect from every confound: two clairvoyant
 We also report two evaluation bugs of our own, because they moved the verdict in opposite directions and neither perturbed rankings at random. A wall-clock replay bug flattered the learned policy; a cost model containing no architecture at all, pricing prefill with constants whose linear/quadratic crossover sat an order of magnitude off any real transformer, flattered LRU, and invalidated a ``static value density collapses'' finding we had previously reported. Simple recency policies are insensitive to broken time, broken features, and broken value models alike; every richer policy is exposed to all three. Harness bugs therefore flatter whichever side of a comparison depends on the broken component, which we suggest is a systematic hazard for the learned-caching literature rather than an accident of our pipeline.
 
 End-to-end validation with TinyLlama-1.1B measures a 19.1$\times$ TTFT gain on CPU, a T4 context-length sweep that crosses parity where predicted, extended on a long-context model to 9.1$\times$ at 6k tokens where cold prefill grows 14.8$\times$ against a 1.8$\times$ warm path, and an in-memory-control ablation in which the storage round-trip adds no output divergence beyond what any cache-resume path already incurs.
+
+The system, the committed experiment data, and the scripts that regenerate every number and figure in this paper are available at \url{https://github.com/aditya-lawankar/kv-cache-tier-persistence}.
 \end{abstract}
 
 % CCS / Index terms
