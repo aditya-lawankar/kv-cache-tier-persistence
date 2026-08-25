@@ -1,0 +1,54 @@
+{
+  "model": "meta-llama/Llama-3.2-1B",
+  "gpu": "Tesla T4",
+  "geometry": {
+    "layers": 16,
+    "q_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 64,
+    "params": 1235814400,
+    "kv_bytes_per_token": 32768
+  },
+  "predicted_n_star": 91,
+  "mfu_assumed": 0.3,
+  "rows": [
+    {
+      "tokens": 512,
+      "cold_ttft_ms": 88.95764199996847,
+      "warm_path_ms": 45.55971499996758,
+      "speedup": 1.9525504494492947,
+      "kv_mb": 16.784965,
+      "predicted_prefill_ms": 66.65813763938462,
+      "predicted_restore_ms": 18.388608,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 7.90625,
+      "trials": 5
+    },
+    {
+      "tokens": 2048,
+      "cold_ttft_ms": 708.1362140000351,
+      "warm_path_ms": 77.14339200003906,
+      "speedup": 9.179479870416854,
+      "kv_mb": 67.116677,
+      "predicted_prefill_ms": 287.77700493784613,
+      "predicted_restore_ms": 43.554432000000006,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 7.578125,
+      "trials": 5
+    },
+    {
+      "tokens": 4096,
+      "cold_ttft_ms": 2517.227702000014,
+      "warm_path_ms": 159.5456009999907,
+      "speedup": 15.777481085173639,
+      "kv_mb": 134.225541,
+      "predicted_prefill_ms": 631.9392215565128,
+      "predicted_restore_ms": 77.108864,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 16.4140625,
+      "trials": 5
+    }
+  ],
+  "note": "INVALID, retained as the record of a measurement bug. The warm path built its cache from the FULL prompt and then re-fed the final token, duplicating it, so the warm and cold logits answered different questions. max_logit_delta of 7.9-16.4 exposes this; next_token_identical stayed at 5/5 throughout, which is why argmax agreement is not a sufficient fidelity check. Timings are also inflated by the math attention backend (T4 is sm75; measured/predicted cold grows 1.33x -> 2.46x -> 3.98x with context length). Superseded by the prefix-cache fix.",
+  "status": "invalid"
+}
