@@ -133,6 +133,31 @@ def main():
         if not ok:
             failures.append('present: ' + frag)
 
+    # ---- figures must plot the same values the tables print ---------------
+    # The prose audit above cannot see figures. Figure 2 once plotted values
+    # derived from cent-rounded dollars, which quantized every bar to 14.4
+    # GPU-s and collapsed two workloads onto identical bars.
+    print("\nFigure data vs table data")
+    print("=" * 78)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "gf", os.path.join(ROOT, "benchmarks", "generate_figures.py"))
+    gf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gf)
+    fagg = gf.load_aggregates()
+    forder, _ = gf._available_policies(fagg)
+    fraw = gf.load_raw()
+    for wl in ("enterprise", "power_user"):
+        _, _, plotted, _, _ = gf._series(fagg, wl, forder)
+        for i, pol in enumerate(forder):
+            truth = float(np.mean([x["gpu_hours_saved_per_day"] * 3600
+                                   for x in fraw[(pol, wl)]]))
+            ok = abs(plotted[i] - truth) <= 0.1
+            print(f"  [{'OK ' if ok else 'BAD'}] fig2 {pol:<17} {wl:<11} "
+                  f"plot={plotted[i]:<8.1f} data={truth:<8.1f}")
+            if not ok:
+                failures.append(f"figure2 {pol}/{wl}")
+
     # ---- mechanical damage that has broken silently before ----------------
     print("\nMechanical checks")
     print("=" * 78)
