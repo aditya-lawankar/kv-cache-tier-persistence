@@ -61,7 +61,7 @@ A ground-truth ablation isolates the effect from every confound: two clairvoyant
 
 We also report two evaluation bugs of our own, because they moved the verdict in opposite directions and neither perturbed rankings at random. A wall-clock replay bug flattered the learned policy; a cost model containing no architecture at all, pricing prefill with constants whose linear/quadratic crossover sat an order of magnitude off any real transformer, flattered LRU, and invalidated a ``static value density collapses'' finding we had previously reported. Simple recency policies are insensitive to broken time, broken features, and broken value models alike; every richer policy is exposed to all three. Harness bugs therefore flatter whichever side of a comparison depends on the broken component, which we suggest is a systematic hazard for the learned-caching literature rather than an accident of our pipeline.
 
-End-to-end validation with TinyLlama-1.1B measures a 19.1$\times$ TTFT gain on CPU, a T4 context-length sweep that crosses parity where predicted, extended on a long-context model to 9.1$	imes$ at 6k tokens where cold prefill grows 14.8$	imes$ against a 1.8$	imes$ warm path, and an in-memory-control ablation in which the storage round-trip adds no output divergence beyond what any cache-resume path already incurs.
+End-to-end validation with TinyLlama-1.1B measures a 19.1$\times$ TTFT gain on CPU, a T4 context-length sweep that crosses parity where predicted, extended on a long-context model to 9.1$\times$ at 6k tokens where cold prefill grows 14.8$\times$ against a 1.8$\times$ warm path, and an in-memory-control ablation in which the storage round-trip adds no output divergence beyond what any cache-resume path already incurs.
 \end{abstract}
 
 % CCS / Index terms
@@ -120,7 +120,7 @@ Compute has outpaced memory on modern accelerators: an A100 delivers 312 TFLOP/s
 The provably optimal offline eviction policy~\cite{belady1966replacement} evicts the item whose next access occurs furthest in the future: $\arg\max_{i} \text{next\_access}(i)$. For uniform-size, uniform-cost items, LRU is an effective online proxy by assuming temporal locality.
 
 \subsection{Weighted Caching}
-When items have varying sizes and costs, the uniform assumption fails. The problem maps to a dynamic Fractional Knapsack. As formalized by Young~\cite{young1994caching} and made practical by GreedyDual-Size~\cite{cao1997greedydualsize}, cost-aware eviction must account for value density per byte. LHD~\cite{beckmann2018lhd} further showed that for \emph{dynamic} caches the correct denominator is not size alone but size $\times$ expected lifetime, which they call ``hit density.'' In KV caching, ``value'' is the quadratic GPU compute saved by avoiding a cold-start prefill, and ``weight'' is the linear VRAM consumed; our results (\S\ref{sec:eval}) empirically rediscover why the static form of this objective fails and the lifetime-normalized form is required.
+When items have varying sizes and costs, the uniform assumption fails. The problem maps to a dynamic Fractional Knapsack. As formalized by Young~\cite{young1994caching} and made practical by GreedyDual-Size~\cite{cao1997greedydualsize}, cost-aware eviction must account for value density per byte. LHD~\cite{beckmann2018lhd} further showed that for \emph{dynamic} caches the correct denominator is not size alone but size $\times$ expected lifetime, which they call ``hit density.'' In KV caching, ``value'' is the quadratic GPU compute saved by avoiding a cold-start prefill, and ``weight'' is the linear VRAM consumed; we evaluate both the static and lifetime-normalized forms in \S\ref{sec:eval}, and find the distinction matters less than the literature suggests once recompute costs are priced from the served architecture.
 
 % ═════════════════════════════════════════════════════════════
 \section{Related Work}
@@ -164,7 +164,7 @@ Transition & Serialization & Compression & Rationale \\
 \midrule
 Hot $\to$ Warm & Raw Binary & None & Min.\ latency \\
 Warm $\to$ Cold & Raw Binary & None (opt.) & \S\ref{sec:compression} \\
-Cold $\to$ Warm & Raw Binary & ,  & Async prefetch \\
+Cold $\to$ Warm & Raw Binary & --- & Async prefetch \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -228,7 +228,7 @@ Our evaluation revealed that static value-density collapses in practice (\S\ref{
   \label{eq:std_eq}
 \end{equation}
 
-Under Little's Law, $L = \lambda \times W$, where $L$ is the steady-state number of resident entries, $\lambda$ their admission rate, and $W$ their average sojourn time; the law holds for any stationary arrival process, independent of distributional assumptions. The failure chain is mechanical. At full utilization the byte capacity is fixed, so $L$ equals capacity divided by mean entry size. A static density score never decreases as an entry idles (its numerator and denominator are both time-free), so the highest-density entries, which are the largest, are simply never evicted: their $W$ grows without bound, mean entry size rises, and $L$ collapses. Fewer resident sessions means fewer opportunities for any future request to hit. The policy wins every local comparison of value per byte while destroying the aggregate through the quantity it never measures: time.
+Under Little's Law, $L = \lambda \times W$, where $L$ is the steady-state number of resident entries, $\lambda$ their admission rate, and $W$ their average sojourn time; the law holds for any stationary arrival process, independent of distributional assumptions. This suggests a failure mode, which we state here as a hypothesis and test in \S\ref{sec:whystatic}. The reasoning runs as follows. At full utilization the byte capacity is fixed, so $L$ equals capacity divided by mean entry size. A static density score never decreases as an entry idles (its numerator and denominator are both time-free), so the highest-density entries, which are the largest, are simply never evicted: their $W$ grows without bound, mean entry size rises, and $L$ collapses. Fewer resident sessions means fewer opportunities for any future request to hit. On this reasoning the policy would win every local comparison of value per byte while destroying the aggregate through the quantity it never measures: time. \S\ref{sec:whystatic} finds the effect is real but confined to workloads with high size variance, and that an earlier version of this paper overstated it because its cost model exaggerated how much more a long session is worth than a short one.
 
 This objective is structurally an adaptation of LHD's hit density~\cite{beckmann2018lhd} (expected hits per unit of size $\times$ lifetime) to the KV-cache setting. The adaptation is non-trivial in two respects: the numerator weights each hit by a \emph{quadratic} recompute cost rather than counting hits uniformly, and $P(\text{resume})$ comes from a learned session-level model rather than age-binned statistics.
 
@@ -278,7 +278,7 @@ We slice ten 6-hour windows across the week (covering weekday/weekend and peak/t
 \section{Comparative Evaluation}
 \label{sec:eval}
 
-Our evaluation is organized around seven questions. Does learned or value-aware eviction beat LRU under an artifact-free protocol? (\S\ref{sec:lru_strong}: not at the canonical capacity, on either metric.) Does the Little's Law diagnosis of \S\ref{sec:std} hold, i.e., does lifetime normalization recover the value that static density loses? (\S\ref{sec:whystatic}: yes, significantly, though not enough to catch LRU.) Do hit rate and value actually diverge enough to mislead? (\S\ref{sec:decouple}: rankings invert.) When the policies are handed the trace's actual future, is the bottleneck the predictor or the objective? (\S\ref{sec:oracle}: the predictor; every oracle achieves a perfect cache.) How far do these verdicts travel across capacities? (\S\ref{sec:regimes}: not far; under severe scarcity the ranking inverts and value-aware eviction wins.) Does any of this survive contact with real production traffic? (\S\ref{sec:realtrace_results}: every finding replicates and the inversion strengthens.) And how much of it depends on our having generated the resumption signal ourselves? (\S\ref{sec:persona}: the learned policy's standing does; the metric finding does not.)
+Our evaluation is organized around seven questions. Does learned or value-aware eviction beat LRU under an artifact-free protocol? (\S\ref{sec:lru_strong}: it wins hit rate everywhere, and loses value on enterprise.) Does the Little's Law diagnosis of \S\ref{sec:std} hold, i.e., does lifetime normalization recover the value that static density loses? (\S\ref{sec:whystatic}: only under high size variance; the collapse we had previously reported was a cost-model artifact.) Do hit rate and value actually diverge enough to mislead? (\S\ref{sec:decouple}: rankings invert.) When the policies are handed the trace's actual future, is the bottleneck the predictor or the objective? (\S\ref{sec:oracle}: the predictor; every oracle achieves a perfect cache.) How far do these verdicts travel across capacities? (\S\ref{sec:regimes}: the advantage is monotone in scarcity, from $7.97\times$ at 125\,MB to $1.05\times$ at 2\,GB, and never reverses.) Does any of this survive contact with real production traffic? (\S\ref{sec:realtrace_results}: every finding replicates and the inversion strengthens.) And how much of it depends on our having generated the resumption signal ourselves? (\S\ref{sec:persona}: the learned policy's standing does; the metric finding does not.)
 
 We evaluated 6 policies across 3 synthetic workloads over 10 seeds, plus the real-trace replay of \S\ref{sec:realtrace}. The casual workload achieved 100\% hit rate at 500MB (the cache was never constrained), so Table~\ref{tab:results} focuses on the two workloads where eviction pressure forces policy differentiation.
 
@@ -292,14 +292,14 @@ We evaluated 6 policies across 3 synthetic workloads over 10 seeds, plus the rea
 \toprule
 Policy & Workload & Hit\% & GPU-s/day & $\Delta$ vs LRU [CI] \\
 \midrule
-LRU           & Enterprise & \textbf{79.1} & 36.8 & ,  \\
+LRU           & Enterprise & \textbf{79.1} & 36.8 & --- \\
 Heuristic     & Enterprise & 55.3 & 60.7 & $+23.9$\,$[+20.8,+27.0]$ \\
 Logistic V1   & Enterprise & 67.9 & 63.5 & $+26.7$\,$[+23.1,+30.3]$ \\
 ValDensity V2 & Enterprise & 58.2 & \textbf{73.2} & $+36.4$\,$[+30.4,+42.4]$ \\
 ValDens+AC    & Enterprise & 58.2 & 68.4 & $+31.6$\,$[+25.5,+37.7]$ \\
 SpaceTime V3  & Enterprise & 57.8 & 72.4 & $+35.6$\,$[+31.5,+39.6]$ \\
 \midrule
-LRU           & Power User & \textbf{96.0} & 48.2 & ,  \\
+LRU           & Power User & \textbf{96.0} & 48.2 & --- \\
 Heuristic     & Power User & 84.2 & \textbf{51.9} & $+3.7$\,$[+0.7,+6.8]$ \\
 Logistic V1   & Power User & 83.9 & 46.2 & $-2.0$\,$[-5.1,+1.1]$ \\
 ValDensity V2 & Power User & 76.9 & 46.5 & $-1.7$\,$[-5.0,+1.6]$ \\
@@ -358,7 +358,7 @@ On the enterprise workload the two metrics do not merely diverge, they \emph{rev
 
 \textbf{Why the reversal happens.} Hit rate weights every hit identically; value does not, for two compounding reasons visible in our accounting. First, a \emph{threshold} effect: a hit is worth nothing at all unless the prefill it avoids exceeds the restore it costs, i.e.\ unless the session exceeds the break-even length $N^{*}$ of \S\ref{sec:breakeven}. Under TinyLlama economics $N^{*}$ is 1,561 tokens from NVMe and 25,901 from object storage, so \emph{every} cold-tier hit in our token range is worth exactly zero. LRU, which is blind to both size and tier, earns 778 of its 1,206 enterprise hits in the cold tier; they inflate its hit rate and contribute nothing. Second, a \emph{magnitude} effect: above $N^{*}$, savings grow superlinearly in $N$, so retaining one 8k-token session can outweigh a dozen 2k-token ones. Value-aware policies concede many cheap hits to keep a few expensive ones, which is exactly the trade hit rate cannot express.
 
-This also predicts when the metrics agree, which we confirm in two independent ways. On \emph{power-user} (median 8,192 tokens, far above $N^{*}$), nearly every hit clears the threshold and the metrics reconverge: no policy beats LRU by more than $1.08\times$ and most differences are not significant (Table~\ref{tab:results}). And on \emph{Llama-2-70B} economics, where grouped-query attention puts $N^{*}$ at 12 tokens from NVMe so that essentially all hits are valuable, LRU's hit-rate advantage largely does translate into value (\S\ref{sec:arch}). The metrics coincide when cached items are near-uniform in value, and diverge as that uniformity breaks, That uniformity is the assumption hit rate encodes, and heavy-tailed LLM workloads violate it.
+This also predicts when the metrics agree, which we confirm in two independent ways. On \emph{power-user} (median 8,192 tokens, far above $N^{*}$), nearly every hit clears the threshold and the metrics reconverge: no policy beats LRU by more than $1.08\times$ and most differences are not significant (Table~\ref{tab:results}). And on \emph{Llama-2-70B} economics, where grouped-query attention puts $N^{*}$ at 12 tokens from NVMe so that essentially all hits are valuable, LRU's hit-rate advantage largely does translate into value (\S\ref{sec:arch}). The metrics coincide when cached items are near-uniform in value and diverge as that uniformity breaks. Uniformity of value is the assumption hit rate encodes, and heavy-tailed LLM workloads violate it.
 
 The right target for KV-cache eviction, in both optimization and evaluation, is expected cache value, not hit rate.
 
@@ -377,13 +377,13 @@ Re-running the identical traces priced at Llama-2-70B separates the two effects,
 \toprule
 Policy & Workload & Hit\% & GPU-s/day & $\Delta$ vs LRU [CI] \\
 \midrule
-LRU           & Enterprise & \textbf{79.1} & 8,173 & ,  \\
+LRU           & Enterprise & \textbf{79.1} & 8,173 & --- \\
 Heuristic     & Enterprise & 55.3 & 7,556 & $-618$\,$[-796,-439]$ \\
 Logistic V1   & Enterprise & 67.9 & \textbf{8,806} & $+633$\,$[+266,+1000]$ \\
 ValDensity V2 & Enterprise & 67.1 & 8,722 & $+549$\,$[+227,+870]$ \\
 SpaceTime V3  & Enterprise & 63.2 & 8,783 & $+610$\,$[+384,+835]$ \\
 \midrule
-LRU           & Power User & \textbf{96.0} & \textbf{4,576} & ,  \\
+LRU           & Power User & \textbf{96.0} & \textbf{4,576} & --- \\
 Heuristic     & Power User & 84.2 & 4,366 & $-209$\,$[-303,-115]$ \\
 Logistic V1   & Power User & 83.9 & 3,958 & $-618$\,$[-744,-491]$ \\
 ValDensity V2 & Power User & 82.7 & 3,961 & $-615$\,$[-747,-483]$ \\
@@ -411,12 +411,12 @@ The results so far leave an alternative explanation open: perhaps the learned po
 \toprule
 Policy & Workload & Hit\% & GPU-s/day & $\Delta$ vs LRU [CI] \\
 \midrule
-LRU              & Enterprise & 79.1  & 36.8  & ,  \\
+LRU              & Enterprise & 79.1  & 36.8  & --- \\
 B\'{e}l\'{a}dy   & Enterprise & 100.0 & 209.8 & $+173.0$\,$[+167.5,+178.6]$ \\
 Oracle V1        & Enterprise & 100.0 & 209.8 & $+173.0$\,$[+167.5,+178.6]$ \\
 Oracle V3        & Enterprise & 100.0 & \textbf{212.7} & $+175.9$\,$[+170.2,+181.7]$ \\
 \midrule
-LRU              & Power User & 96.0  & 48.2  & ,  \\
+LRU              & Power User & 96.0  & 48.2  & --- \\
 B\'{e}l\'{a}dy   & Power User & 100.0 & \textbf{122.7} & $+74.5$\,$[+66.5,+82.5]$ \\
 Oracle V1        & Power User & 100.0 & 122.7 & $+74.5$\,$[+66.5,+82.5]$ \\
 Oracle V3        & Power User & 100.0 & 122.1 & $+74.0$\,$[+66.1,+81.8]$ \\
@@ -483,7 +483,7 @@ Third, the metric fails where it appears most reliable. At 2\,GB every policy in
 \toprule
 Policy & Hit\% & GPU-s/day & $\Delta$ vs LRU [CI] \\
 \midrule
-LRU              & \textbf{83.9} & 32.1 & ,  \\
+LRU              & \textbf{83.9} & 32.1 & --- \\
 Heuristic        & 60.9 & 53.2 & $+21.2$\,$[+18.8,+23.5]$ \\
 Logistic V1      & 73.8 & 59.1 & $+27.0$\,$[+24.5,+29.5]$ \\
 ValDensity V2    & 67.0 & \textbf{70.0} & $+37.9$\,$[+34.8,+41.1]$ \\
@@ -707,7 +707,7 @@ Third, \emph{the model's shape holds but its constants are platform-specific}. M
 
 We set out to beat LRU at cache eviction with a learned policy, and failed: across three synthetic workloads, ten paired seeds, two model architectures, and a replay of the Azure LLM inference production trace, LRU wins cache hit rate every time.
 
-That verdict, however, does not mean what it appears to mean. Measured in GPU time actually saved, the same LRU that wins every hit-rate comparison delivers the least value of any policy on our enterprise workload, where a value-density policy conceding 21 hit-rate points saves 1.99$\times$ as much compute. Hit rate treats all hits as equal; KV caching makes them unequal twice over, since a hit below the break-even length $N^{*}$ is worth nothing at all and savings above it grow superlinearly with context. Where those effects are absent, on workloads far above $N^{*}$, or on large grouped-query models where $N^{*}$ falls to tens of tokens: the metrics agree and LRU is genuinely the right choice. Where the workload straddles $N^{*}$, optimizing hit rate selects the worst policy available and reports it as the best.
+That verdict, however, does not mean what it appears to mean. Measured in GPU time actually saved, the same LRU that wins every hit-rate comparison delivers the least value of any policy on our enterprise workload, where a value-density policy conceding 21 hit-rate points saves 1.99$\times$ as much compute. Hit rate treats all hits as equal; KV caching makes them unequal twice over, since a hit below the break-even length $N^{*}$ is worth nothing at all and savings above it grow superlinearly with context. Where those effects are absent (workloads far above $N^{*}$, or large grouped-query models where $N^{*}$ falls to tens of tokens), the metrics agree and LRU is genuinely the right choice. Where the workload straddles $N^{*}$, optimizing hit rate selects the worst policy available and reports it as the best.
 
 The clearest evidence is an ablation in which everything else is removed: two clairvoyant policies, both caching perfectly at a 100.0\% hit rate, still differ significantly in delivered value, because the tier an entry sits in determines what its hit is worth and hit rate cannot represent that. We arrived here by correcting our own evaluation twice, and the corrections moved in opposite directions: one flattered the learned policy, the other flattered LRU and had supported a collapse-of-value-density finding that did not survive re-pricing. Because a recency policy consumes strictly less information than its competitors, it is strictly less exposed to defects in that information, and evaluation errors consequently favor whichever side depends on the broken part. We think that asymmetry, more than any individual number in this paper, is what the learned-caching literature should take from it.
 
