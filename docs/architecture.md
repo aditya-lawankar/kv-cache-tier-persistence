@@ -199,7 +199,7 @@ are the alternative; see the paper's related work.
 | `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |
 | `benchmarks/compression_benchmark.py` | LZ4/Zstd/zlib on real KV bytes |
 | `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates |
-| `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab; Llama-3.2-1B by default, pins a tiled SDPA backend since T4 lacks flash) |
+| `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab; Llama-3.2-1B, pins a tiled SDPA backend since T4 lacks flash). Builds the cache over tokens 0..N-2 so the warm path reconstructs the cold state, and gates on max logit deviation rather than argmax agreement |
 
 Each run logs a `hit_histogram` over `(cached_tokens, tier)`, which is a sufficient statistic
 for re-pricing without re-simulating. `make` targets: `reproduce`, `reproduce-arch`,

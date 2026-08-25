@@ -1,0 +1,76 @@
+{
+  "model": "meta-llama/Llama-3.2-1B",
+  "gpu": "Tesla T4",
+  "geometry": {
+    "layers": 16,
+    "q_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 64,
+    "params": 1235814400,
+    "kv_bytes_per_token": 32768
+  },
+  "predicted_n_star": 91,
+  "mfu_assumed": 0.3,
+  "rows": [
+    {
+      "tokens": 512,
+      "cold_ttft_ms": 110.86607200013532,
+      "warm_path_ms": 101.49047999993854,
+      "speedup": 1.0923790290498425,
+      "kv_mb": 16.752197,
+      "predicted_prefill_ms": 66.65813763938462,
+      "predicted_restore_ms": 18.388608,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 0.01953125,
+      "trials": 5
+    },
+    {
+      "tokens": 1024,
+      "cold_ttft_ms": 157.3981559999993,
+      "warm_path_ms": 115.49181600003067,
+      "speedup": 1.3628511651419308,
+      "kv_mb": 33.529413,
+      "predicted_prefill_ms": 136.84035100882053,
+      "predicted_restore_ms": 26.777216,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 0.0234375,
+      "trials": 5
+    },
+    {
+      "tokens": 2048,
+      "cold_ttft_ms": 339.73562000005586,
+      "warm_path_ms": 114.52864000011687,
+      "speedup": 2.9663813348321364,
+      "kv_mb": 67.083909,
+      "predicted_prefill_ms": 287.77700493784613,
+      "predicted_restore_ms": 43.554432000000006,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 0.03125,
+      "trials": 5
+    },
+    {
+      "tokens": 4096,
+      "cold_ttft_ms": 878.2465049998791,
+      "warm_path_ms": 145.98580200004108,
+      "speedup": 6.0159720532249565,
+      "kv_mb": 134.192773,
+      "predicted_prefill_ms": 631.9392215565128,
+      "predicted_restore_ms": 77.108864,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 0.02734375,
+      "trials": 5
+    },
+    {
+      "tokens": 6144,
+      "cold_ttft_ms": 1645.0913930000297,
+      "warm_path_ms": 180.508429999918,
+      "speedup": 9.113654099150809,
+      "kv_mb": 201.301637,
+      "predicted_prefill_ms": 1032.486649856,
+      "predicted_restore_ms": 110.66329599999999,
+      "next_token_identical": "5/5",
+      "max_logit_delta": 0.02734375,
+      "trials": 5
+    }
+  ]
+}

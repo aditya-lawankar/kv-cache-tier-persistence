@@ -67,6 +67,12 @@ what a hit is worth. A persona-strength sweep varies how predictable the simulat
 (AUC 0.659 to 0.739, retraining at each setting): the learned policy's standing depends on that
 choice, the metric finding does not.
 
+**Hardware validation.** A long-context sweep on Llama-3.2-1B (T4, 512 to 6,144 tokens) shows
+cold prefill growing 14.8× while the restore path grows 1.8× over the same 12× context increase,
+reaching a 9.1× TTFT speedup. Restoration is faithful: the warm and cold next-token logit vectors
+differ by at most 0.031, FP16 rounding on a scale spanning tens. Results in
+`benchmarks/results/gpu_sweep/`; regenerate with `benchmarks/context_sweep_gpu.ipynb`.
+
 All numbers regenerate via `make reproduce` and `make reproduce-arch` — see
 `benchmarks/experiment_runner.py`,
 `benchmarks/results/experiment_results_v3_aggregate.json`, and
