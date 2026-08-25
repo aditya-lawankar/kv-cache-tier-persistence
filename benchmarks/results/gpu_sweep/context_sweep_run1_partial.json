@@ -1,0 +1,12 @@
+{
+  "note": "First Colab attempt, Qwen2.5-0.5B on a T4. Superseded: SDPA fell back to the math attention backend (T4 is sm75; flash needs sm80+), which materialized the N-by-N attention matrix. This inflated cold prefill times progressively with context length (4.7x the model prediction at 512 tokens rising to 8.8x at 7,890) and OOMed at 16,384. Reported speedups are therefore optimistic for this configuration and are NOT used in the paper. Retained as the record of why the notebook now forces a tiled SDPA backend.",
+  "model": "Qwen/Qwen2.5-0.5B",
+  "gpu": "Tesla T4",
+  "attention_backend": "math (unintended fallback)",
+  "rows": [
+    {"tokens": 512,  "cold_ttft_ms": 126.1, "warm_path_ms": 91.6,  "speedup": 1.38,  "kv_mb": 6.3,  "next_token_identical": "5/5"},
+    {"tokens": 2002, "cold_ttft_ms": 439.7, "warm_path_ms": 96.1,  "speedup": 4.57,  "kv_mb": 24.6, "next_token_identical": "0/5"},
+    {"tokens": 3957, "cold_ttft_ms": 1482.6,"warm_path_ms": 140.4, "speedup": 10.56, "kv_mb": 48.6, "next_token_identical": "0/5"},
+    {"tokens": 7890, "cold_ttft_ms": 5928.0,"warm_path_ms": 136.4, "speedup": 43.45, "kv_mb": 97.0, "next_token_identical": "5/5"}
+  ]
+}
