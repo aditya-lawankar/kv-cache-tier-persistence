@@ -365,11 +365,22 @@ repeats the measurement on a long-context model (Qwen2.5-0.5B by default, ungate
 512 to 16,384 tokens, entirely above N*, so the measured curve can be compared against the
 prediction over a decade of context length rather than at a single crossing.
 
+Defaults to `meta-llama/Llama-3.2-1B` (GQA 8/32, 32 KB/token), whose geometry matches the
+architecture discussion in the paper. That repository is gated: accept its license on
+HuggingFace and add a read token as a Colab secret named `HF_TOKEN`. `Qwen/Qwen2.5-0.5B` is
+an ungated fallback one line away in the config cell.
+
 Upload the notebook to [Colab](https://colab.research.google.com/), set
 **Runtime > Change runtime type > T4 GPU** before running, then **Runtime > Run all**.
 It takes 15-25 minutes and downloads `context_sweep_results.json` at the end. The notebook
 derives N* from the same equations as `benchmarks/breakeven_analysis.py`, so it is
 self-contained and needs nothing from this repo.
+
+Note that a T4 is compute capability 7.5 and cannot run PyTorch's flash SDPA backend, which
+requires sm80+. Left alone, attention falls back to the math backend, which materializes the
+N x N score matrix: that OOMs at 16k tokens and inflates prefill time progressively with
+context length. The notebook pins a tiled backend to avoid it and prints the device
+capability so the fallback is visible rather than silent.
 
 ### Running the persona strength sweep
 
