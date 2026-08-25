@@ -357,6 +357,20 @@ scarcity, and even clairvoyant policies trade hit rate for value once capacity b
 make reproduce-capacity
 ```
 
+### Running the long-context GPU sweep (Colab)
+
+**Why:** the T4 sweep in the paper is capped at 1,792 tokens by TinyLlama's 2,048-token
+context window, only just past its predicted crossover of N* ~ 1,561. `benchmarks/context_sweep_gpu.ipynb`
+repeats the measurement on a long-context model (Qwen2.5-0.5B by default, ungated) across
+512 to 16,384 tokens, entirely above N*, so the measured curve can be compared against the
+prediction over a decade of context length rather than at a single crossing.
+
+Upload the notebook to [Colab](https://colab.research.google.com/), set
+**Runtime > Change runtime type > T4 GPU** before running, then **Runtime > Run all**.
+It takes 15-25 minutes and downloads `context_sweep_results.json` at the end. The notebook
+derives N* from the same equations as `benchmarks/breakeven_analysis.py`, so it is
+self-contained and needs nothing from this repo.
+
 ### Running the persona strength sweep
 
 **Why:** the resumption signal in the synthetic workloads is generated, so the
