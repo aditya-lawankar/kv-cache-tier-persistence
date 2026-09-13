@@ -1,0 +1,146 @@
+[
+  {
+    "policy": "lru",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.7938,
+    "hit_rate_ci95": [
+      0.7613,
+      0.8262
+    ],
+    "cost_saved_per_day_mean": 0.09,
+    "cost_saved_per_day_ci95": [
+      0.089,
+      0.095
+    ],
+    "hits_by_tier_mean": {
+      "hot": 220.9,
+      "warm": 1019.7,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": null,
+    "delta_cost_vs_lru_ci95": null,
+    "delta_hit_rate_vs_lru_mean": null,
+    "delta_hit_rate_vs_lru_ci95": null
+  },
+  {
+    "policy": "heuristic",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.565,
+    "hit_rate_ci95": [
+      0.5437,
+      0.5864
+    ],
+    "cost_saved_per_day_mean": 0.09,
+    "cost_saved_per_day_ci95": [
+      0.0903,
+      0.0977
+    ],
+    "hits_by_tier_mean": {
+      "hot": 163.4,
+      "warm": 720.2,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.0,
+    "delta_cost_vs_lru_ci95": [
+      -0.001,
+      0.005
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.2287,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.2442,
+      -0.2133
+    ]
+  },
+  {
+    "policy": "logistic_v1",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.6799,
+    "hit_rate_ci95": [
+      0.6686,
+      0.6912
+    ],
+    "cost_saved_per_day_mean": 0.1,
+    "cost_saved_per_day_ci95": [
+      0.1003,
+      0.1077
+    ],
+    "hits_by_tier_mean": {
+      "hot": 415.7,
+      "warm": 649.0,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.01,
+    "delta_cost_vs_lru_ci95": [
+      0.009,
+      0.015
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.1139,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.1459,
+      -0.0819
+    ]
+  },
+  {
+    "policy": "value_density",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.5852,
+    "hit_rate_ci95": [
+      0.5703,
+      0.6002
+    ],
+    "cost_saved_per_day_mean": 0.1,
+    "cost_saved_per_day_ci95": [
+      0.0954,
+      0.1086
+    ],
+    "hits_by_tier_mean": {
+      "hot": 200.4,
+      "warm": 715.4,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.01,
+    "delta_cost_vs_lru_ci95": [
+      0.0052,
+      0.0148
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.2085,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.2339,
+      -0.1832
+    ]
+  },
+  {
+    "policy": "space_time",
+    "workload": "enterprise",
+    "n_seeds": 10,
+    "hit_rate_mean": 0.5809,
+    "hit_rate_ci95": [
+      0.5603,
+      0.6016
+    ],
+    "cost_saved_per_day_mean": 0.11,
+    "cost_saved_per_day_ci95": [
+      0.1012,
+      0.1088
+    ],
+    "hits_by_tier_mean": {
+      "hot": 228.9,
+      "warm": 679.4,
+      "cold": 0.0
+    },
+    "delta_cost_vs_lru_mean": 0.01,
+    "delta_cost_vs_lru_ci95": [
+      0.0095,
+      0.0165
+    ],
+    "delta_hit_rate_vs_lru_mean": -0.2128,
+    "delta_hit_rate_vs_lru_ci95": [
+      -0.2305,
+      -0.1952
+    ]
+  }
+]

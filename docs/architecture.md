@@ -164,6 +164,21 @@ cross between 12k and 53k. That inflated a long session's worth relative to a sh
 `tests/test_cost_model.py`, including a check that predictions land within 2x of measured
 GPU prefill latency, and that its $N^*$ values match the break-even analysis exactly.
 
+### Two-tier and three-tier configurations
+
+`--tiers two` removes the cold tier and redistributes its capacity, holding total bytes
+fixed. This exists because whether a tier can pay for itself is architecture-dependent: if
+a tier's `N*` exceeds the workload's context lengths, no hit from it can repay its restore,
+and the tier is capacity the system cannot use. Under TinyLlama economics the cold tier is
+exactly that, and removing it is worth 3.6x in delivered value, more than any eviction
+policy in the study.
+
+One trap for anyone extending this: `cold_capacity_mb=0` means **unlimited**, not empty,
+because `StorageTier.is_full()` treats a non-positive capacity as uncapped. The runner
+therefore pins the cold tier to 1 byte in two-tier mode. The first version of that control
+set 0 and produced a clean-looking 100% hit rate for every policy; what exposed it was the
+run logging 3,265 cold-tier hits in a configuration with no cold tier.
+
 ### Scale model
 
 The simulator serializes a downscaled geometry (2 layers, 2 heads, head_dim 32, FP16 =
@@ -193,18 +208,22 @@ are the alternative; see the paper's related work.
 
 | Script | Purpose |
 |---|---|
-| `benchmarks/experiment_runner.py` | The matrix. Flags: `--arch`, `--capacity-mb`, `--persona-sigma`, `--predictor`, `--policies`, `--workloads`, `--azure` |
+| `benchmarks/experiment_runner.py` | The matrix. Flags: `--arch`, `--capacity-mb`, `--persona-sigma`, `--predictor`, `--policies`, `--workloads`, `--azure`, `--tiers` |
+| | `--tiers two` drops the cold tier. Note `cold_capacity_mb=0` means UNLIMITED (`StorageTier.is_full` treats non-positive capacity as uncapped), so the runner pins the cold tier to 1 byte instead |
 | `benchmarks/rescore_results.py` | Re-price finished runs at another architecture from logged hit histograms. Refuses cost-model-bound policies |
 | `benchmarks/make_paper_tables.py` | Raw shards to console tables plus LaTeX bodies |
 | `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |
 | `benchmarks/compression_benchmark.py` | LZ4/Zstd/zlib on real KV bytes |
-| `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates |
+| `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates. The former decision-matrix figure was removed: it encoded the value-density collapse finding that the cost-model correction retracted |
+| `benchmarks/audit_paper_numbers.py` | Cross-checks every number quoted in the full paper's prose against the committed result files, **and every bar in Figure 2 against the same data**, plus text and mechanical assertions. Exits non-zero on any discrepancy; run before any submission |
+| `benchmarks/audit_workshop_numbers.py` | The same job for the 4-page workshop paper (`paper/workshop/`), a separate deliverable built from separate sources. Checks 81 claims across its prose, table, appendix tables, and both series of its figure, plus **that the body still ends by page 4** — measured as "no body text precedes the References heading", since body can spill above that heading and still leave it on page 5 |
+| `benchmarks/generate_workshop_figure.py` | The workshop paper's two-panel reversal figure (hit rate beside delivered value, synthetic beside Azure), built from the same raw run records the tables use |
 | `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab; Llama-3.2-1B, pins a tiled SDPA backend since T4 lacks flash). Builds the cache over tokens 0..N-2 so the warm path reconstructs the cold state, and gates on max logit deviation rather than argmax agreement |
 
 Each run logs a `hit_histogram` over `(cached_tokens, tier)`, which is a sufficient statistic
 for re-pricing without re-simulating. `make` targets: `reproduce`, `reproduce-arch`,
 `reproduce-azure`, `reproduce-oracle`, `reproduce-capacity`, `reproduce-persona`,
-`bench-compression`, `arxiv`.
+`bench-compression`, `arxiv`, `workshop`, `workshop-bundle`, `audit`.
 
 ## 8. vLLM Integration Guide
 

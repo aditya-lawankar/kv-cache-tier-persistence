@@ -11,7 +11,6 @@ numbers — so every figure in the paper is reproducible by rerunning:
 Produces:
   figure1_hit_rate.png      – Grouped bar chart of cache hit rates (95% t-CI over seeds)
   figure2_cost_savings.png  – Grouped bar chart of daily GPU cost savings (95% t-CI)
-  figure3_failure_modes.png – 2x2 conceptual decision matrix
 """
 
 import os
@@ -66,26 +65,65 @@ def load_aggregates():
     return {(r["policy"], r["workload"]): r for r in rows}
 
 
+RAW_PATH = os.path.join(RESULTS_DIR, "experiment_results_v3_raw.json")
 GPU_S_PER_USD = 3600.0 / 2.50
 
 
-def _series(agg, workload, order):
-    """Extract means and symmetric CI half-widths for one workload, policy-ordered."""
+def load_raw():
+    """Per-run records, keyed by (policy, workload) -> list of runs.
+
+    Value must come from here rather than from the aggregate. The aggregate
+    stores dollars rounded to cents, and at small-model economics a whole
+    workload is worth a few cents per day, so converting cents back to
+    GPU-seconds quantizes every bar to the nearest 1440/100 = 14.4 GPU-s and
+    collapses distinct workloads onto identical bars. The raw records carry
+    gpu_hours_saved_per_day at four decimals, which is 0.36 GPU-s.
+    """
+    with open(RAW_PATH) as f:
+        rows = json.load(f)
+    out = {}
+    for r in rows:
+        out.setdefault((r["policy"], r["workload"]), []).append(r)
+    return out
+
+
+def _ci95(values):
+    a = np.asarray(values, dtype=float)
+    if len(a) < 2:
+        return float(a.mean()), 0.0
+    from scipy import stats
+    half = stats.t.ppf(0.975, len(a) - 1) * a.std(ddof=1) / np.sqrt(len(a))
+    return float(a.mean()), float(half)
+
+
+def _series(agg, workload, order, raw=None):
+    """Means and symmetric CI half-widths for one workload, policy-ordered.
+
+    Hit rates come from the aggregate; value is re-derived from the raw runs
+    in GPU-seconds per day (see load_raw)."""
+    if raw is None:
+        raw = load_raw()
     hit_mean, hit_err, cost_mean, cost_err, delta = [], [], [], [], []
+    lru_runs = {r["seed"]: r for r in raw.get(("lru", workload), [])}
     for p in order:
         r = agg[(p, workload)]
         hit_mean.append(r["hit_rate_mean"] * 100)
         lo, hi = r["hit_rate_ci95"]
         hit_err.append((hi - lo) * 100 / 2)
-        # Value is reported in GPU-seconds saved per day; the stored figure is
-        # dollars at $2.50 per GPU-hour, so 1 $/day = 3600/2.50 = 1440 GPU-s/day.
-        # Converting here keeps the plots in the scale-free unit without
-        # re-deriving them from raw runs.
-        cost_mean.append(r["cost_saved_per_day_mean"] * GPU_S_PER_USD)
-        lo, hi = r["cost_saved_per_day_ci95"]
-        cost_err.append((hi - lo) / 2 * GPU_S_PER_USD)
-        d = r.get("delta_cost_vs_lru_mean")
-        delta.append(None if d is None else d * GPU_S_PER_USD)
+
+        runs = raw[(p, workload)]
+        vals = [x["gpu_hours_saved_per_day"] * 3600.0 for x in runs]
+        m, h = _ci95(vals)
+        cost_mean.append(m)
+        cost_err.append(h)
+
+        if p == "lru" or not lru_runs:
+            delta.append(None)
+        else:
+            paired = [x["gpu_hours_saved_per_day"] * 3600.0
+                      - lru_runs[x["seed"]]["gpu_hours_saved_per_day"] * 3600.0
+                      for x in runs if x["seed"] in lru_runs]
+            delta.append(_ci95(paired)[0] if paired else None)
     return (np.array(hit_mean), np.array(hit_err),
             np.array(cost_mean), np.array(cost_err), delta)
 
@@ -171,13 +209,16 @@ def make_figure2(agg):
         label="Power User", error_kw=dict(lw=1.0, capthick=1.0),
     )
 
-    # Value labels
-    for bar_group in [bars1, bars2]:
-        for bar in bar_group:
+    # Value labels. Offset is a fraction of the data range: a fixed offset was
+    # calibrated for dollar-scale magnitudes and floats labels off the axes now
+    # that the unit is GPU-seconds.
+    ymax = max(cost_pow.max(), cost_ent.max())
+    for bar_group, errs in ((bars1, err_ent), (bars2, err_pow)):
+        for bar, e in zip(bar_group, errs):
             h = bar.get_height()
             ax.text(
-                bar.get_x() + bar.get_width() / 2, h + 50,
-                f"${h:,.0f}", ha="center", va="bottom",
+                bar.get_x() + bar.get_width() / 2, h + e + ymax * 0.025,
+                f"{h:,.0f}", ha="center", va="bottom",
                 fontsize=7.5, fontweight="medium",
             )
 
@@ -187,11 +228,11 @@ def make_figure2(agg):
     d = delta_pow[logistic_idx]
     if d is not None and d > 0:
         r = agg[("logistic_v1", "power_user")]
-        lo, hi = r["delta_cost_vs_lru_ci95"]
+        lo, hi = [v * GPU_S_PER_USD for v in r["delta_cost_vs_lru_ci95"]]
         target_x = x[logistic_idx] + bar_w / 2
         target_y = cost_pow[logistic_idx]
         ax.annotate(
-            f"+${d:,.0f}/day vs LRU (paired)\n95% CI [{lo:+,.0f}, {hi:+,.0f}]",
+            f"{d:+,.0f} GPU-s/day vs LRU (paired)\n95% CI [{lo:+,.0f}, {hi:+,.0f}]",
             xy=(target_x, target_y),
             xytext=(target_x + 1.05, target_y + max(cost_pow) * 0.08),
             fontsize=9, fontstyle="italic", color="#c0392b",
@@ -208,7 +249,7 @@ def make_figure2(agg):
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("GPU-seconds saved per day")
-    ax.set_ylim(0, max(cost_pow.max(), cost_ent.max()) * 1.3)
+    ax.set_ylim(0, ymax * 1.28)
     ax.set_title(f"GPU Time Saved by Policy and Workload ({n_seeds} seeds, 95% CI)")
     ax.legend(frameon=True, framealpha=0.9, edgecolor="#cccccc")
 
@@ -226,103 +267,10 @@ def make_figure2(agg):
 # ════════════════════════════════════════════════════════════════════════
 # Figure 3 – Failure-Mode Conceptual 2×2 Matrix
 # ════════════════════════════════════════════════════════════════════════
-def make_figure3(agg):
-    fig, ax = plt.subplots(figsize=(7.5, 6.0))
 
-    # Quadrant colours (muted pastels)
-    colors = {
-        "TL": "#d6eaf8",  # light blue
-        "TR": "#fdebd0",  # light peach
-        "BL": "#d5f5e3",  # light green
-        "BR": "#f5b7b1",  # light coral
-    }
-
-    quadrants = [
-        (0.0, 0.5, 0.5, 0.5, "TL"),
-        (0.5, 0.5, 0.5, 0.5, "TR"),
-        (0.0, 0.0, 0.5, 0.5, "BL"),
-        (0.5, 0.0, 0.5, 0.5, "BR"),
-    ]
-    for x0, y0, w, h, key in quadrants:
-        rect = mpatches.FancyBboxPatch(
-            (x0 + 0.01, y0 + 0.01), w - 0.02, h - 0.02,
-            boxstyle="round,pad=0.02",
-            facecolor=colors[key], edgecolor="#888888", linewidth=1.0,
-            transform=ax.transAxes,
-        )
-        ax.add_patch(rect)
-
-    # Pull headline numbers from the data
-    lru_ent = agg[("lru", "enterprise")]["hit_rate_mean"] * 100
-    lru_pow = agg[("lru", "power_user")]
-    heur_pow = agg[("heuristic", "power_user")]
-    vd_pow_hit = agg[("value_density", "power_user")]["hit_rate_mean"] * 100
-    casual_hit = agg[("lru", "casual")]["hit_rate_mean"] * 100
-
-    # Value/hit-rate decoupling: heuristic's value retention at lower hit rate
-    hit_gap = (lru_pow["hit_rate_mean"] - heur_pow["hit_rate_mean"]) * 100
-    value_retained = heur_pow["cost_saved_per_day_mean"] / lru_pow["cost_saved_per_day_mean"] * 100
-    tr_line = (f"Power User\nHits $\\neq$ Value:\n$-${hit_gap:.0f}pt hits $\\Rightarrow$ "
-               f"{value_retained:.0f}% of value")
-
-    st_delta = None
-    if ("space_time", "power_user") in agg and ("value_density", "power_user") in agg:
-        st_delta = (agg[("space_time", "power_user")]["cost_saved_per_day_mean"]
-                    - agg[("value_density", "power_user")]["cost_saved_per_day_mean"])
-    br_line = f"V2 Cardinality\nCollapse Zone\n({vd_pow_hit:.0f}% hit rate)"
-    if st_delta is not None:
-        br_line += f"\nV3 recovers +\\${st_delta:,.0f}/day"
-
-    texts = [
-        (0.25, 0.75, f"Enterprise\nLRU Dominates\n({lru_ent:.0f}% hit rate)",   "#1a5276"),
-        (0.75, 0.75, tr_line,                                                    "#784212"),
-        (0.25, 0.25, f"Casual\nAll Tied\n({casual_hit:.0f}% — unconstrained)", "#196f3d"),
-        (0.75, 0.25, br_line,                                                    "#922b21"),
-    ]
-    for tx, ty, label, color in texts:
-        ax.text(
-            tx, ty, label,
-            transform=ax.transAxes,
-            ha="center", va="center",
-            fontsize=11, fontweight="semibold",
-            color=color, linespacing=1.45,
-        )
-
-    ax.set_xlabel("Token-Count Variance (σ)", fontsize=12, labelpad=12)
-    ax.set_ylabel("Prediction Confidence Variance", fontsize=12, labelpad=12)
-
-    ax.set_xticks([0.25, 0.75])
-    ax.set_xticklabels(["Low", "High"], fontsize=10)
-    ax.set_yticks([0.25, 0.75])
-    ax.set_yticklabels(["Low", "High"], fontsize=10)
-
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_aspect("equal")
-
-    ax.axhline(0.5, color="#555555", linewidth=1.2, linestyle="-")
-    ax.axvline(0.5, color="#555555", linewidth=1.2, linestyle="-")
-    ax.grid(False)
-
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_linewidth(1.0)
-        spine.set_color("#555555")
-
-    ax.set_title("Policy Selection Decision Matrix", fontsize=13, pad=14)
-
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, "figure3_failure_modes.png")
-    fig.savefig(path)
-    plt.close(fig)
-    print(f"  [OK] {path}")
-
-
-# ── Main ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Generating figures from", AGG_PATH)
     aggregates = load_aggregates()
     make_figure1(aggregates)
     make_figure2(aggregates)
-    make_figure3(aggregates)
     print("Done — all figures saved to", OUT_DIR)

@@ -23,16 +23,29 @@ benchmarks/results/*
 !benchmarks/results/experiment_results_persona_aggregate.json
 !benchmarks/results/compression_benchmark.json
 !benchmarks/results/paper_tables_corrected.json
+!benchmarks/results/experiment_results_twotier_aggregate.json
 !benchmarks/results/gpu_sweep/
 !benchmarks/results/gpu_sweep/*.json
 
-# LaTeX build artifacts (paper.pdf at repo root is committed deliberately)
+# LaTeX build artifacts (paper.pdf at repo root is committed deliberately,
+# and so is paper/workshop/paper.pdf — the 4-page workshop submission)
 paper/latex/*.aux
 paper/latex/*.bbl
 paper/latex/*.blg
 paper/latex/*.log
 paper/latex/*.out
 paper/latex/paper.pdf
+paper/workshop/*.aux
+paper/workshop/*.bbl
+paper/workshop/*.blg
+paper/workshop/*.log
+paper/workshop/*.out
+paper/mlsys27/*.aux
+paper/mlsys27/*.bbl
+paper/mlsys27/*.blg
+paper/mlsys27/*.log
+paper/mlsys27/*.out
+paper/mlsys27/paper.pdf
 
 # Private working notes — not part of the public artifact
 PROJECT_REVIEW.md
@@ -40,3 +53,11 @@ PROJECT_BRIEFING.md
 fable_review_context.md
 arxiv_submission.zip
 arxiv_bundle.zip
+workshop_submission.zip
+
+# Per-venue bib copies. The single source is paper/shared/references.bib;
+# `make sync-bib` copies it next to each paper.tex so every variant builds and
+# bundles flat (arXiv and OpenReview both want a self-contained directory).
+paper/latex/references.bib
+paper/workshop/references.bib
+paper/mlsys27/references.bib

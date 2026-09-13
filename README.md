@@ -67,6 +67,13 @@ what a hit is worth. A persona-strength sweep varies how predictable the simulat
 (AUC 0.659 to 0.739, retraining at each setting): the learned policy's standing depends on that
 choice, the metric finding does not.
 
+**Provisioning dominates policy.** A two-tier control (cold tier removed, its capacity given
+to hot and warm, total bytes held fixed) raises LRU from 36.8 to 131.0 GPU-s/day, a 3.6×
+gain from deleting a tier whose restore can never be repaid at this architecture's break-even
+length. That is larger than any eviction policy we evaluated (best: 1.99×). The metric
+inversion survives the correction at 1.15×, so it is not merely an artifact of the
+provisioning error. Regenerate with `--tiers two`.
+
 **Hardware validation.** A long-context sweep on Llama-3.2-1B (T4, 512 to 6,144 tokens) shows
 cold prefill growing 14.8× while the restore path grows 1.8× over the same 12× context increase,
 reaching a 9.1× TTFT speedup. Restoration is faithful: the warm and cold next-token logit vectors
@@ -82,13 +89,25 @@ All numbers regenerate via `make reproduce` and `make reproduce-arch` — see
 
 ## 📄 Research Paper
 
-**[Hit Rate Is Not Value: A Rigorous Evaluation of Learned and Value-Aware Eviction for
-Tiered LLM KV-Cache Persistence](paper.pdf)** — USENIX-style paper covering the system
-design, the V1→V2→V3 eviction-policy progression, the statistical methodology, the
+**Full paper — [Hit Rate Is Not Value: A Rigorous Evaluation of Learned and Value-Aware
+Eviction for Tiered LLM KV-Cache Persistence](paper.pdf)** — USENIX-style, covering the
+system design, the V1→V2→V3 eviction-policy progression, the statistical methodology, the
 break-even analysis across model architectures, the oracle and persona ablations, and
 the TinyLlama end-to-end validation. LaTeX sources in
 [`paper/latex/`](paper/latex/); every number and figure regenerates from the committed
 result JSONs (`make reproduce`).
+
+**Workshop paper — [Hit Rate Is Not Value: When Cache Metrics Mislead in Tiered LLM
+KV-Cache Persistence](paper/workshop/paper.pdf)** — a 4-page condensation for the NeurIPS
+2026 Machine Learning for Systems workshop, in NeurIPS format. It keeps the metric
+reversal, the break-even mechanism with both decomposition controls, the provisioning
+result, the oracle ablation, and the harness-bug asymmetry; it drops the system design,
+the compression and latency benchmarks, and the end-to-end validation detail. Sources and
+build instructions in [`paper/workshop/`](paper/workshop/).
+
+These are **separate deliverables** built from separate sources. `make arxiv` packages the
+full paper only; `make workshop-bundle` packages the workshop paper only. Both draw their
+numbers from the same committed result JSONs, and each has its own audit script.
 
 ---
 
@@ -388,6 +407,27 @@ N x N score matrix: that OOMs at 16k tokens and inflates prefill time progressiv
 context length. The notebook pins a tiled backend to avoid it and prints the device
 capability so the fallback is visible rather than silent.
 
+### Verifying the paper's numbers
+
+The paper's remaining error class is arithmetic hygiene: a figure quoted in prose that no
+longer matches the table it came from after a re-run. Those survive proofreading because
+each sentence is locally plausible, so they are checked mechanically instead.
+
+```bash
+python benchmarks/audit_paper_numbers.py       # full paper
+python benchmarks/audit_workshop_numbers.py    # 4-page workshop paper
+# or both:
+make audit
+```
+
+They re-derive every quoted figure from the committed result JSONs, assert that retracted
+claims stay absent from the text, and check for rendering damage that has broken silently
+before. Non-zero exit on any discrepancy.
+
+The workshop audit additionally checks every cell of the paper's one table, the values
+plotted in its one figure, and that the body still ends by page 4 — so the page limit is
+enforced by the build rather than remembered.
+
 ### Running the persona strength sweep
 
 **Why:** the resumption signal in the synthetic workloads is generated, so the
@@ -464,16 +504,20 @@ always wins on latency. This derives N* analytically and generates Figure 4:
 python benchmarks/breakeven_analysis.py
 ```
 
-### Building the paper
+### Building the papers
 
 ```bash
-make arxiv          # compile + package LaTeX sources into arxiv_bundle.zip
+make arxiv            # full paper → arxiv_bundle.zip
+make workshop         # 4-page workshop paper, then audit it (fails if it spills past page 4)
+make workshop-bundle  # workshop paper → workshop_submission.zip
 # or manually:
-cd paper/latex && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+cd paper/latex    && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+cd paper/workshop && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
 ```
 
-Every number and figure in the paper regenerates from the committed result JSONs —
-if a claim in the paper cannot be traced to `benchmarks/results/*.json`, that is a bug.
+The two papers are independent build products: neither target touches the other's sources
+or output. Every number and figure in both regenerates from the committed result JSONs —
+if a claim in either paper cannot be traced to `benchmarks/results/*.json`, that is a bug.
 
 ## 📁 Project Structure
 
@@ -496,7 +540,9 @@ kv-cache-tier-persistence/
 │                       # break-even analysis, TinyLlama + GPU validation
 ├── models/             # Trained ML model artifacts (.pkl)
 ├── tests/              # 55 Pytest tests
-├── paper/              # LaTeX sources + figures (paper.pdf at repo root)
+├── paper/
+│   ├── latex/           # Full paper sources + figures (paper.pdf at repo root)
+│   └── workshop/        # 4-page NeurIPS workshop paper (separate deliverable)
 └── docs/               # Architecture documents
 ```
 

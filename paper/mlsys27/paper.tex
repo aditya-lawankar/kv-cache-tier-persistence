@@ -1,3 +1,20 @@
+% =============================================================================
+% MLSys 2027 submission -- deadline Oct 30, 2026, 20:00 UTC.
+%
+% STARTS AS A COPY of paper/latex/paper.tex (17pp) with anonymization applied.
+% Still to do, in the order that matters:
+%   1. Content. The workshop reviews land Sept 29, 2026. Fold them in BEFORE
+%      cutting, so the trimming happens on the answered version of the paper.
+%   2. Template. MLSys 2027 had not posted its .sty when this was scaffolded, so
+%      the preamble below is still the USENIX-ish one inherited from the full
+%      paper. Swap it when the official style lands.
+%   3. Length. MLSys allows 10 pages EXCLUDING references, with an UNLIMITED
+%      appendix. The cut is therefore a move, not a deletion: push cost-model
+%      validation, admission control, and the capacity sweep into appendices.
+%   4. Chairs. MLSys requires emailing them the workshop paper and explaining the
+%      added novelty over it. Not optional -- see paper/mlsys27/README.md.
+% =============================================================================
+
 % USENIX-style two-column paper
 % To use the official USENIX template, replace this preamble with:
 %   \documentclass[letterpaper,twocolumn,10pt]{article}
@@ -40,9 +57,13 @@
 When Cache Metrics Mislead in\\
 Tiered LLM KV-Cache Persistence}
 
+% DOUBLE-BLIND: MLSys 2027 rejects non-anonymized submissions WITHOUT REVIEW.
+% This block stays anonymous until camera-ready. benchmarks/audit_mlsys_numbers.py
+% asserts the real name, email, and repo URL are absent, so a paste-back from
+% paper/latex/paper.tex cannot slip through unnoticed.
 \author{
-  {\rm Aditya Lawankar} \\
-  \texttt{lawankaraditya@gmail.com}
+  {\rm Anonymous Author(s)} \\
+  {\rm Submitted to MLSys 2027}
 }
 
 \date{}
@@ -66,7 +87,7 @@ We also report two evaluation bugs of our own, because they moved the verdict in
 
 End-to-end validation with TinyLlama-1.1B measures a 19.1$\times$ TTFT gain on CPU, a T4 context-length sweep that crosses parity where predicted, extended on a long-context model to 9.1$\times$ at 6k tokens where cold prefill grows 14.8$\times$ against a 1.8$\times$ warm path, and an in-memory-control ablation in which the storage round-trip adds no output divergence beyond what any cache-resume path already incurs.
 
-The system, the committed experiment data, and the scripts that regenerate every number and figure in this paper are available at \url{https://github.com/aditya-lawankar/kv-cache-tier-persistence}.
+The system, the committed experiment data, and the scripts that regenerate every number and figure in this paper are available as an anonymized artifact; the repository URL is withheld for double-blind review and is restored for camera-ready.  % TODO: anonymous.4open.science mirror before Oct 30
 \end{abstract}
 
 % CCS / Index terms
