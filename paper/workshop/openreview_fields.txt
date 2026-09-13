@@ -1,0 +1,28 @@
+OpenReview submission fields — NeurIPS 2026 ML for Systems
+Generated from paper/workshop/paper.tex. Keep in sync if the abstract changes.
+
+================================================================================
+TL;DR
+================================================================================
+We tried to beat LRU at evicting persisted LLM KV caches and lost on hit rate, then found that hit rate is the wrong metric: the policy that wins it delivers the least GPU time saved.
+
+--- alternative, mechanism-forward ---
+Hit rate is the wrong objective for tiered LLM KV-cache eviction, because a hit below the break-even context length $N^{*}$ is worth nothing and hit rate cannot see it.
+
+================================================================================
+ABSTRACT
+================================================================================
+We set out to beat LRU at evicting persisted LLM KV caches with a learned policy, and failed: across three synthetic workloads, two served architectures, and a replay of the Azure LLM inference trace, LRU wins cache hit rate every time. The interesting result is what that verdict conceals. Measured in GPU time actually saved, the same LRU delivers the least value of any policy we test on enterprise traffic, where a value-density policy conceding 21 hit-rate points saves $1.99\times$ as much compute, and still $1.15\times$ once we correct a provisioning error the same analysis exposes. Hit rate assumes every hit is worth the same; KV caching violates that twice, since a hit below the break-even context length $N^{*}$ is worth nothing and above it savings grow superlinearly. Both effects are closed-form in $N^{*}$, and the largest lever they expose is provisioning, not policy: deleting a tier that cannot repay its restore is worth $3.6\times$ at identical capacity. A ground-truth ablation isolates the failure: two clairvoyant policies that both cache perfectly, 100.0% against 100.0%, still deliver significantly different value.
+
+================================================================================
+CONVERSION NOTES
+================================================================================
+Differences from the LaTeX source, and why:
+  - \emph{least} -> least. OpenReview does not reliably render LaTeX emphasis,
+    and the sentence carries the contrast without it. If the form previews
+    markdown, *least* restores the italics.
+  - 100.0\% -> 100.0%. The backslash escape is LaTeX-only; outside math it
+    would render literally.
+  - $N^{*}$, $1.99\times$, $1.15\times$, $3.6\times$ are unchanged. MathJax
+    handles \times and superscripts in the $...$ inline form the field accepts.
+No numbers, claims, or wording were altered.

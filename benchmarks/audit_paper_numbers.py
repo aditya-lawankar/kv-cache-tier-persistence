@@ -12,62 +12,24 @@ not survive a diff against the source data.
 Exits non-zero if any checked claim disagrees with the data.
 """
 
-import glob
-import io
-import json
-import os
-import re
 import sys
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PAPER = os.path.join(ROOT, 'paper', 'latex', 'paper.tex')
+from paper_audit import Audit, load, load_script, read_tex, summarize
+
+PAPER = ('paper', 'latex', 'paper.tex')
 
 
-def gpu_s(run):
-    return run['gpu_hours_saved_per_day'] * 3600
+def build_claims():
+    """Every numeric claim the full paper makes, paired with the data behind it.
 
-
-def load(pattern, workload='enterprise', seeds=None):
-    out = {}
-    for path in glob.glob(os.path.join(ROOT, pattern)):
-        for r in json.load(open(path)):
-            if r['workload'] != workload:
-                continue
-            if seeds is not None and r['seed'] not in seeds:
-                continue
-            out[(r['policy'], r['seed'])] = r
-    return out
-
-
-def summarize(runs):
-    """policy -> (mean hit rate %, mean GPU-s/day, ratio vs LRU)."""
-    pols = sorted({p for p, _ in runs})
-    seeds = sorted({s for _, s in runs})
-    stats = {}
-    for p in pols:
-        rs = [runs[(p, s)] for s in seeds if (p, s) in runs]
-        if not rs:
-            continue
-        stats[p] = [float(np.mean([r['hit_rate'] for r in rs]) * 100),
-                    float(np.mean([gpu_s(r) for r in rs]))]
-    lru = stats.get('lru', [None, None])[1]
-    for p in stats:
-        stats[p].append(stats[p][1] / lru if lru else float('nan'))
-    return stats
-
-
-def check(label, claimed, actual, tol):
-    ok = abs(claimed - actual) <= tol
-    print(f"  [{'OK ' if ok else 'BAD'}] {label:<52} paper={claimed:<9.4g} data={actual:<9.4g}")
-    return ok
-
-
-def main():
-    text = io.open(PAPER, encoding='utf-8').read()
-    failures = []
-
+    Exposed rather than kept inline because paper/mlsys27/ starts life as a copy
+    of this paper: while the two share prose they share claims, and one list is
+    what stops them drifting. When the MLSys version diverges after the workshop
+    reviews, benchmarks/audit_mlsys_numbers.py forks its own list and this one
+    stops being shared -- which is a deliberate edit, not a silent one.
+    """
     # ---- sources -----------------------------------------------------------
     main10 = summarize(load('benchmarks/results/arch_tinyllama*/shard_*/'
                             'experiment_results_v3_raw.json', seeds=set(range(42, 52))))
@@ -110,40 +72,29 @@ def main():
          100.0 - round(oracle['lru'][0], 1), 0.05),
     ]
 
-    print("Prose claims vs committed result data")
-    print("=" * 78)
-    for label, claimed, actual, tol in claims:
-        if not check(label, claimed, actual, tol):
-            failures.append(label)
+    return claims
+
+
+def main():
+    text = read_tex(*PAPER)
+    audit = Audit()
+
+    audit.section("Prose claims vs committed result data")
+    audit.check_all(build_claims())
 
     # ---- claims that must also literally appear in the text ---------------
-    print("\nText assertions")
-    print("=" * 78)
+    audit.section("Text assertions")
     must_appear = ["20.9 over Value~Density~V2", "1.99$\\times$", "131.0", "3.6$"]
     must_not_appear = ["21.3 over Value", "include two oracles", "1{,}800 GPU-hours",
                        "figure3_failure_modes", "static value-density collapses in practice"]
-    for frag in must_appear:
-        ok = frag in text
-        print(f"  [{'OK ' if ok else 'BAD'}] present: {frag}")
-        if not ok:
-            failures.append('missing: ' + frag)
-    for frag in must_not_appear:
-        ok = frag not in text
-        print(f"  [{'OK ' if ok else 'BAD'}] absent:  {frag}")
-        if not ok:
-            failures.append('present: ' + frag)
+    audit.require_text(text, must_appear, must_not_appear)
 
     # ---- figures must plot the same values the tables print ---------------
     # The prose audit above cannot see figures. Figure 2 once plotted values
     # derived from cent-rounded dollars, which quantized every bar to 14.4
     # GPU-s and collapsed two workloads onto identical bars.
-    print("\nFigure data vs table data")
-    print("=" * 78)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "gf", os.path.join(ROOT, "benchmarks", "generate_figures.py"))
-    gf = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(gf)
+    audit.section("Figure data vs table data")
+    gf = load_script('generate_figures.py')
     fagg = gf.load_aggregates()
     forder, _ = gf._available_policies(fagg)
     fraw = gf.load_raw()
@@ -153,36 +104,22 @@ def main():
             truth = float(np.mean([x["gpu_hours_saved_per_day"] * 3600
                                    for x in fraw[(pol, wl)]]))
             ok = abs(plotted[i] - truth) <= 0.1
-            print(f"  [{'OK ' if ok else 'BAD'}] fig2 {pol:<17} {wl:<11} "
-                  f"plot={plotted[i]:<8.1f} data={truth:<8.1f}")
-            if not ok:
-                failures.append(f"figure2 {pol}/{wl}")
+            audit.flag(f"figure2 {pol}/{wl}", ok,
+                   f"  plot={plotted[i]:<8.1f} data={truth:<8.1f}")
 
     # ---- mechanical damage that has broken silently before ----------------
-    print("\nMechanical checks")
-    print("=" * 78)
+    audit.section("Mechanical checks")
     mech = [("no tab characters", chr(9) not in text),
             ("no stray table commas", "& ,  " not in text),
             ("no broken times macros",
              not [i for i in range(len(text) - 5)
                   if text[i:i+5] == 'imes$' and text[i-1] != 't']),
             ("no currency in GPU-second figure",
-             'f"$' not in io.open(os.path.join(ROOT, 'benchmarks', 'generate_figures.py'),
-                                  encoding='utf-8').read())]
+             'f"$' not in read_tex('benchmarks', 'generate_figures.py'))]
     for label, ok in mech:
-        print(f"  [{'OK ' if ok else 'BAD'}] {label}")
-        if not ok:
-            failures.append(label)
+        audit.flag(label, ok)
 
-    print("\n" + "=" * 78)
-    if failures:
-        print(f"FAIL: {len(failures)} discrepancies")
-        for f in failures:
-            print("   -", f)
-        return 1
-    print(f"PASS: {len(claims)} numeric claims agree with the data; "
-          "text and mechanical checks clean")
-    return 0
+    return audit.report("text and mechanical checks clean")
 
 
 if __name__ == '__main__':

@@ -215,13 +215,15 @@ are the alternative; see the paper's related work.
 | `benchmarks/breakeven_analysis.py` | $N^*$ per architecture and tier, plus Figure 4 |
 | `benchmarks/compression_benchmark.py` | LZ4/Zstd/zlib on real KV bytes |
 | `benchmarks/generate_figures.py`, `generate_capacity_figure.py` | Paper figures from committed aggregates. The former decision-matrix figure was removed: it encoded the value-density collapse finding that the cost-model correction retracted |
-| `benchmarks/audit_paper_numbers.py` | Cross-checks every number quoted in the paper's prose against the committed result files, **and every bar in Figure 2 against the same data**, plus text and mechanical assertions. Exits non-zero on any discrepancy; run before any submission |
+| `benchmarks/audit_paper_numbers.py` | Cross-checks every number quoted in the full paper's prose against the committed result files, **and every bar in Figure 2 against the same data**, plus text and mechanical assertions. Exits non-zero on any discrepancy; run before any submission |
+| `benchmarks/audit_workshop_numbers.py` | The same job for the 4-page workshop paper (`paper/workshop/`), a separate deliverable built from separate sources. Checks 81 claims across its prose, table, appendix tables, and both series of its figure, plus **that the body still ends by page 4** — measured as "no body text precedes the References heading", since body can spill above that heading and still leave it on page 5 |
+| `benchmarks/generate_workshop_figure.py` | The workshop paper's two-panel reversal figure (hit rate beside delivered value, synthetic beside Azure), built from the same raw run records the tables use |
 | `benchmarks/context_sweep_gpu.ipynb` | Long-context TTFT sweep (Colab; Llama-3.2-1B, pins a tiled SDPA backend since T4 lacks flash). Builds the cache over tokens 0..N-2 so the warm path reconstructs the cold state, and gates on max logit deviation rather than argmax agreement |
 
 Each run logs a `hit_histogram` over `(cached_tokens, tier)`, which is a sufficient statistic
 for re-pricing without re-simulating. `make` targets: `reproduce`, `reproduce-arch`,
 `reproduce-azure`, `reproduce-oracle`, `reproduce-capacity`, `reproduce-persona`,
-`bench-compression`, `arxiv`.
+`bench-compression`, `arxiv`, `workshop`, `workshop-bundle`, `audit`.
 
 ## 8. vLLM Integration Guide
 
