@@ -242,10 +242,10 @@ We presented a three-tier KV cache persistence system with learned eviction poli
 
 [3] L. A. Bélády, "A Study of Replacement Algorithms for a Virtual-Storage Computer," *IBM Systems Journal*, vol. 5, no. 2, pp. 78–101, 1966.
 
-[4] Y. Gim, G. Chen, S. Lee, N. Sarda, A. Kalia, and P. Gibbons, "CachedAttention: Accelerating Diffusion Model and Long-Context LLM Inference with KV Cache Compression," in *Proceedings of the 2024 USENIX Annual Technical Conference (ATC)*, 2024.
+[4] B. Gao, Z. He, P. Sharma, Q. Kang, D. Jevdjic, J. Deng, X. Yang, Z. Yu, and P. Zuo, "Cost-Efficient Large Language Model Serving for Multi-turn Conversations with CachedAttention," in *Proceedings of the 2024 USENIX Annual Technical Conference (ATC)*, 2024.
 
-[5] R. Qin, Z. Li, W. He, M. Zhang, Y. Wen, L. Lu, and Y. Xu, "Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving," in *Proceedings of the 23rd USENIX Conference on File and Storage Technologies (FAST)*, 2025.
+[5] R. Qin, Z. Li, W. He, J. Cui, F. Ren, M. Zhang, Y. Wu, W. Zheng, and X. Xu, "Mooncake: Trading More Storage for Less Computation — A KVCache-centric Architecture for Serving LLM Chatbot," in *Proceedings of the 23rd USENIX Conference on File and Storage Technologies (FAST)*, 2025.
 
-[6] Y. Yao, K. He, J. Liu, Y. Xu, B. Tian, and L. Zheng, "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge Fusion," *arXiv preprint arXiv:2405.16444*, 2024.
+[6] J. Yao, H. Li, Y. Liu, S. Ray, Y. Cheng, Q. Zhang, K. Du, S. Lu, and J. Jiang, "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge Fusion," *arXiv preprint arXiv:2405.16444*, 2024.
 
-[7] A. Zhong, S. Zeng, Z. Jiang, H. Zhang, L. Zheng, R. Chen, and M. Kamahori, "LMCache: Accelerating LLM Serving with Reusable KV Caches," *GitHub Repository*, 2024. Available: https://github.com/LMCache/LMCache
+[7] LMCache Team, "LMCache: Accelerating LLM Serving with Reusable KV Caches," *GitHub Repository*, 2024. Available: https://github.com/LMCache/LMCache
