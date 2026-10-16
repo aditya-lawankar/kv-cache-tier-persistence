@@ -13,7 +13,7 @@ five things existed twice, verbatim, and a third venue would have made three.
 The formatting assertions are the reason this is worth factoring rather than
 copying. The workshop paper is reviewed NON-blind, so its audit asserts the
 real author block is present. Every archival venue on the shortlist (FAST,
-ASPLOS, EuroSys, MLSys) is double-blind, where that same assertion inverts: the
+ASPLOS, EuroSys) is double-blind, where that same assertion inverts: the
 name must be ABSENT. Copying the workshop script to seed a venue variant would
 carry the wrong polarity across silently, and anonymization would fail review.
 Against this module that is one argument.

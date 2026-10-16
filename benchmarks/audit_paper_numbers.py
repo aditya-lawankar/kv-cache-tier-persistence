@@ -22,17 +22,12 @@ PAPER = ('paper', 'latex', 'paper.tex')
 
 
 def build_claims():
-    """Every numeric claim the full paper makes, paired with the data behind it.
-
-    Exposed rather than kept inline because paper/mlsys27/ starts life as a copy
-    of this paper: while the two share prose they share claims, and one list is
-    what stops them drifting. When the MLSys version diverges after the workshop
-    reviews, benchmarks/audit_mlsys_numbers.py forks its own list and this one
-    stops being shared -- which is a deliberate edit, not a silent one.
-    """
+    """Every numeric claim the full paper makes, paired with the data behind it."""
     # ---- sources -----------------------------------------------------------
-    main10 = summarize(load('benchmarks/results/arch_tinyllama*/shard_*/'
-                            'experiment_results_v3_raw.json', seeds=set(range(42, 52))))
+    runs10 = load('benchmarks/results/arch_tinyllama*/shard_*/'
+                  'experiment_results_v3_raw.json', seeds=set(range(42, 52)))
+    main10 = summarize(runs10)
+    lru10 = [r for (p, _), r in runs10.items() if p == 'lru']
     two = summarize(load('benchmarks/results/twotier/shard_*/experiment_results_v3_raw.json',
                          seeds=set(range(42, 52))))
     azure = summarize(load('benchmarks/results/azure_v2/*/experiment_results_azure_raw.json',
@@ -59,6 +54,11 @@ def build_claims():
          round(main10['lru'][0], 1) - round(main10['logistic_v1'][0], 1), 0.05),
         ("9.3: LRU-V2 hit gap (was 21.3)", 20.9,
          round(main10['lru'][0], 1) - round(main10['value_density'][0], 1), 0.05),
+        # The paper prints these mean hit counts as integers, so half a hit is rounding.
+        ("reversal: LRU cold-tier hits ('812')", 812,
+         float(np.mean([r['hits_by_tier']['cold'] for r in lru10])), 0.5),
+        ("reversal: LRU total hits ('1,237')", 1237,
+         float(np.mean([r['total_hits'] for r in lru10])), 0.5),
         ("two-tier: LRU GPU-s/day ('131.0')", 131.0, two['lru'][1], 0.1),
         ("two-tier: LRU hit% ('79.4')", 79.4, two['lru'][0], 0.05),
         ("two-tier: V3 ratio ('1.15x')", 1.15, two['space_time'][2], 0.005),
@@ -84,9 +84,18 @@ def main():
 
     # ---- claims that must also literally appear in the text ---------------
     audit.section("Text assertions")
-    must_appear = ["20.9 over Value~Density~V2", "1.99$\\times$", "131.0", "3.6$"]
+    must_appear = ["20.9 over Value~Density~V2", "1.99$\\times$", "131.0", "3.6$",
+                   "812 of its 1,237"]
     must_not_appear = ["21.3 over Value", "include two oracles", "1{,}800 GPU-hours",
-                       "figure3_failure_modes", "static value-density collapses in practice"]
+                       "figure3_failure_modes", "static value-density collapses in practice",
+                       # Seed 42's count, not the ten-seed mean every other figure uses.
+                       "778 of its 1,206",
+                       # The two residual estimates (1.07-1.08x, 1.13-1.15x) differ by 5-8 points.
+                       "within two points",
+                       # The cost-model defect was not caught by a reader.
+                       "a reader asked",
+                       # Value is modeled, not observed.
+                       "actually saved"]
     audit.require_text(text, must_appear, must_not_appear)
 
     # ---- figures must plot the same values the tables print ---------------

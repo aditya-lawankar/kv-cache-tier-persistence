@@ -22,7 +22,7 @@ We began with the hypothesis that predictive eviction would beat LRU on **hit ra
 falsified that hypothesis, and the diagnosis of *why* became the project's actual contribution:
 
 1. **LRU wins hit rate, and loses on value.** Across every constrained workload LRU has the
-   highest hit rate. Measured in GPU compute actually saved, it delivers the *least* value of
+   highest hit rate. Scored by GPU compute saved, it delivers the *least* value of
    any policy tested on enterprise traffic. Ranking by hit rate selects the lowest-value policy.
 2. **Hit rate assumes all hits are worth the same, and KV caching violates that twice.** A hit
    is worth nothing unless the prefill it avoids exceeds the restore it costs (the break-even
@@ -287,8 +287,7 @@ kv-cache-tier-persistence/
 ├── tests/              # 69 Pytest tests
 ├── paper/
 │   ├── latex/           # Full paper sources + figures (paper.pdf at repo root)
-│   ├── workshop/        # 4-page NeurIPS workshop paper (separate deliverable)
-│   └── mlsys27/         # MLSys-format version of the full paper
+│   └── workshop/        # 4-page NeurIPS workshop paper (separate deliverable)
 └── docs/               # Architecture documents
 ```
 

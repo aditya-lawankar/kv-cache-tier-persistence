@@ -40,12 +40,6 @@ paper/workshop/*.bbl
 paper/workshop/*.blg
 paper/workshop/*.log
 paper/workshop/*.out
-paper/mlsys27/*.aux
-paper/mlsys27/*.bbl
-paper/mlsys27/*.blg
-paper/mlsys27/*.log
-paper/mlsys27/*.out
-paper/mlsys27/paper.pdf
 
 # Private working notes — not part of the public artifact
 PROJECT_REVIEW.md
@@ -60,4 +54,3 @@ workshop_submission.zip
 # bundles flat (arXiv and OpenReview both want a self-contained directory).
 paper/latex/references.bib
 paper/workshop/references.bib
-paper/mlsys27/references.bib

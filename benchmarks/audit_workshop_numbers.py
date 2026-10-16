@@ -126,6 +126,15 @@ def main():
          round(t['lru'][0], 1) - round(t['logistic_v1'][0], 1), 0.5),
     ]
 
+    # The paper prints these mean hit counts as integers, so half a hit is rounding.
+    lru_runs = [tiny[('lru', s)] for s in sorted(ten)]
+    claims += [
+        ("S4: LRU cold-tier hits, enterprise ('812')", 812,
+         float(np.mean([r['hits_by_tier']['cold'] for r in lru_runs])), 0.5),
+        ("S4: LRU total hits, enterprise ('1,237')", 1237,
+         float(np.mean([r['total_hits'] for r in lru_runs])), 0.5),
+    ]
+
     # -- Section 5: oracles -------------------------------------------------
     claims += [
         ("S5: Belady hit% ('100.0')", 100.0, o['belady'][0], 0.05),
@@ -213,7 +222,7 @@ def main():
     # -- Claims that must literally appear, and retracted ones that must not -
     audit.section("Text assertions")
     must_appear = ["$1.99\\times$", "131.0", "factor of $3.6$",
-                   "100.0\\% against 100.0\\%", "778 of its 1{,}206", "$5.70\\times$",
+                   "100.0\\% against 100.0\\%", "812 of its 1{,}237", "$5.70\\times$",
                    # The ML for Systems CFP says review is non-blind, so the paper
                    # must render its real author block. dblblindworkshop would
                    # silently replace it with "Anonymous Author(s)".
@@ -240,7 +249,15 @@ def main():
                        "sglblindworkshop, final",
                        # The abstract must not claim the decision rule beats
                        # every policy; only the provisioning step is evidenced.
-                       "outperforms every policy we built"]
+                       "outperforms every policy we built",
+                       # Seed 42's count, not the ten-seed mean every other figure uses.
+                       "778 of its 1{,}206",
+                       # The two residual estimates (1.07-1.08x, 1.13-1.15x) differ by 5-8 points.
+                       "within two points",
+                       # The cost-model defect was not caught by a reader.
+                       "a reader asked",
+                       # Value is modeled, not observed (see Limitations).
+                       "actually saved"]
     audit.require_text(text, must_appear, must_not_appear)
 
     # -- Figure 1 must plot the values the prose quotes ---------------------

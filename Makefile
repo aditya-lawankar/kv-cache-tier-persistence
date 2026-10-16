@@ -1,4 +1,4 @@
-.PHONY: install test test-cov bench-quick bench-full clean lint reproduce reproduce-arch reproduce-azure reproduce-oracle reproduce-capacity reproduce-persona bench-compression sync-bib arxiv workshop workshop-bundle mlsys mlsys-bundle audit
+.PHONY: install test test-cov bench-quick bench-full clean lint reproduce reproduce-arch reproduce-azure reproduce-oracle reproduce-capacity reproduce-persona bench-compression sync-bib arxiv workshop workshop-bundle audit
 
 # One bibliography, many venues. paper/shared/references.bib is the single
 # source; this copies it next to each paper.tex. Every variant therefore builds
@@ -8,7 +8,6 @@
 sync-bib:
 	cp paper/shared/references.bib paper/latex/references.bib
 	cp paper/shared/references.bib paper/workshop/references.bib
-	cp paper/shared/references.bib paper/mlsys27/references.bib
 
 # Build the arXiv submission bundle (LaTeX sources + precompiled .bbl + figures).
 # Compile the paper first so paper.bbl is current.
@@ -29,23 +28,10 @@ workshop: sync-bib
 workshop-bundle: workshop
 	cd paper/workshop && rm -f ../../workshop_submission.zip && zip -r ../../workshop_submission.zip paper.tex references.bib paper.bbl neurips_2026.sty figures/
 
-# Build the MLSys 2027 submission (deadline Oct 30, 2026). Double-blind: the
-# audit asserts the author block, email and repo URL are ABSENT, which is the
-# inverse of the workshop's non-blind assertion. MLSys rejects non-anonymized
-# submissions without review, so this check is a gate, not a warning.
-mlsys: sync-bib
-	cd paper/mlsys27 && pdflatex -interaction=nonstopmode paper.tex && bibtex paper && pdflatex -interaction=nonstopmode paper.tex && pdflatex -interaction=nonstopmode paper.tex
-	python benchmarks/audit_mlsys_numbers.py
-
-# Package the MLSys submission (sources + precompiled .bbl + figures).
-mlsys-bundle: mlsys
-	cd paper/mlsys27 && rm -f ../../mlsys_submission.zip && zip -r ../../mlsys_submission.zip paper.tex references.bib paper.bbl figures/
-
 # Check every venue variant's numbers against the committed result files.
 audit:
 	python benchmarks/audit_paper_numbers.py
 	python benchmarks/audit_workshop_numbers.py
-	python benchmarks/audit_mlsys_numbers.py
 
 # Regenerate every number and figure in the paper from scratch:
 # retrain predictors, run the full multi-seed experiment matrix,
